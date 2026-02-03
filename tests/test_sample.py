@@ -10,6 +10,7 @@ def test_sample_passing():
     assert 1 + 1 == 2
 
 
+@pytest.mark.xfail(reason="This test is expected to fail - it's just for demonstration")
 def test_sample_failing():
     """A simple failing test (should fail)."""
     # This test is expected to fail - it's just for demonstration
