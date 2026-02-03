@@ -4,7 +4,6 @@ CLI module for xlmanage.
 
 import typer
 
-
 app = typer.Typer(name="xlmanage", help="Excel automation CLI tool")
 
 

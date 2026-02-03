@@ -159,7 +159,7 @@ def main():
     print(f"✓ Epics créé : {output_path}")
     print(f"  Produit : {args.product_name}")
     print(f"  Première version : {args.first_version}")
-    print(f"\nN'oubliez pas de remplir les sections avec des informations réelles !")
+    print("\nN'oubliez pas de remplir les sections avec des informations réelles !")
 
     return 0
 

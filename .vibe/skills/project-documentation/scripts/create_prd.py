@@ -213,7 +213,7 @@ def main():
     print(f"  Produit : {args.product_name}")
     print(f"  Auteur : {args.author}")
     print(f"  Version : {args.version}")
-    print(f"\nN'oubliez pas de remplir les sections avec des informations réelles !")
+    print("\nN'oubliez pas de remplir les sections avec des informations réelles !")
 
     return 0
 

@@ -18,8 +18,6 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import argparse
-import os
-import sys
 from datetime import datetime
 from pathlib import Path
 

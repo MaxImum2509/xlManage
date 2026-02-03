@@ -19,15 +19,13 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 
 import argparse
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
-
+from pathlib import Path
 
 PROGRESS_FILE = Path("PROGRESS.md")
 
 
-def _find_section_index(lines: list[str], section_name: str) -> Optional[int]:
+def _find_section_index(lines: list[str], section_name: str) -> int | None:
     """Find the index of a section header (## Epic, ### Story, etc.)"""
     for i, line in enumerate(lines):
         if section_name in line:

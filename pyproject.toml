@@ -51,6 +51,15 @@ packages = [{ include = "xlmanage", from = "src" }]
 [tool.ruff]
 line-length = 88
 target-version = "py313"
+exclude = [
+    ".vibe/",
+    "docs/",
+    "tests/",
+    ".git/",
+    "__pycache__/",
+    ".venv/",
+    "venv/",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

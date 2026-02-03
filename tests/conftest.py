@@ -2,13 +2,14 @@
 Global pytest fixtures and hooks for xlmanage project.
 """
 
-import pytest
+from collections.abc import Generator
 from unittest.mock import Mock
-from typing import Generator
+
+import pytest
 
 
 @pytest.fixture(scope="session")
-def mock_excel_app() -> Generator[Mock, None, None]:
+def mock_excel_app() -> Generator[Mock]:
     """Session-wide mock for Excel application."""
     mock_app = Mock()
     mock_app.Visible = True
@@ -18,7 +19,7 @@ def mock_excel_app() -> Generator[Mock, None, None]:
 
 
 @pytest.fixture(scope="function")
-def mock_workbook() -> Generator[Mock, None, None]:
+def mock_workbook() -> Generator[Mock]:
     """Function-scoped mock for Excel workbook."""
     mock_wb = Mock()
     mock_wb.Saved = True
@@ -27,7 +28,7 @@ def mock_workbook() -> Generator[Mock, None, None]:
 
 
 @pytest.fixture(scope="function")
-def mock_worksheet() -> Generator[Mock, None, None]:
+def mock_worksheet() -> Generator[Mock]:
     """Function-scoped mock for Excel worksheet."""
     mock_ws = Mock()
     mock_ws.Name = "Sheet1"
@@ -45,18 +46,9 @@ def setup_timeout(request):
 def pytest_configure(config):
     """Pytest configuration hook."""
     # Register custom markers
-    config.addinivalue_line(
-        "markers",
-        "com: tests involving COM automation"
-    )
-    config.addinivalue_line(
-        "markers",
-        "slow: tests that are slow to run"
-    )
-    config.addinivalue_line(
-        "markers",
-        "integration: integration tests"
-    )
+    config.addinivalue_line("markers", "com: tests involving COM automation")
+    config.addinivalue_line("markers", "slow: tests that are slow to run")
+    config.addinivalue_line("markers", "integration: integration tests")
 
 
 def pytest_runtest_setup(item):

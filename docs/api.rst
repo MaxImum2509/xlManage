@@ -33,4 +33,3 @@ The following modules are planned for future development:
 * ``xlmanage.excel_manager`` - Core Excel management functionality
 * ``xlmanage.utils`` - Utility functions
 * ``xlmanage.exceptions`` - Custom exceptions
-

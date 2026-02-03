@@ -1,0 +1,103 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: ruff check --fix
+        language: python
+        types: [python]
+        args: [--config=pyproject.toml]
+        exclude: \.vibe/|docs/|tests/|\.git/|__pycache__/|\.venv/|venv/
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff-format
+        entry: ruff format
+        language: python
+        types: [python]
+        args: [--config=pyproject.toml]
+        exclude: \.vibe/|docs/|tests/|\.git/|__pycache__/|\.venv/|venv/
+        require_serial: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: trailing-whitespace
+        description: Trims trailing whitespace
+        entry: trailing-whitespace-fixer
+        language: python
+        types: [text]
+        stages: [pre-commit, pre-push]
+
+      - id: end-of-file-fixer
+        name: end-of-file-fixer
+        description: Ensures that a file is either empty, or ends with one newline
+        entry: end-of-file-fixer
+        language: python
+        types: [text]
+        stages: [pre-commit, pre-push]
+
+      - id: check-yaml
+        name: check-yaml
+        description: Attempts to load all yaml files to verify syntax
+        entry: check-yaml
+        language: python
+        types: [yaml]
+        stages: [pre-commit, pre-push]
+
+      - id: check-toml
+        name: check-toml
+        description: Attempts to load all toml files to verify syntax
+        entry: check-toml
+        language: python
+        types: [toml]
+        stages: [pre-commit, pre-push]
+
+      - id: check-json
+        name: check-json
+        description: Attempts to load all json files to verify syntax
+        entry: check-json
+        language: python
+        types: [json]
+        stages: [pre-commit, pre-push]
+
+      - id: check-added-large-files
+        name: check-added-large-files
+        description: Prevents giant files from being committed
+        entry: check-added-large-files
+        language: python
+        args: [--maxkb=500]
+        stages: [pre-commit, pre-push]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        name: mypy
+        description: Static type checker for Python
+        entry: mypy
+        language: python
+        types: [python]
+        args: [--config-file=pyproject.toml]
+        require_serial: true
+        additional_dependencies:
+          - types-setuptools
+          - pywin32-stubs
+
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest-check
+        description: Run pytest to ensure tests pass
+        entry: poetry run pytest tests/ --cov=src/ --cov-fail-under=90
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true
+
+default_stages: [pre-commit, pre-push]
+fail_fast: false
+minimum_pre_commit_version: 4.5.1

@@ -21,10 +21,9 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 
-def validate_adr_filename(filename: str) -> Tuple[bool, str]:
+def validate_adr_filename(filename: str) -> tuple[bool, str]:
     """Valide le format du nom de fichier ADR."""
     pattern = r"^ADR-\d{3}-.+-\d{8}\.md$"
     if not re.match(pattern, filename):
@@ -35,7 +34,7 @@ def validate_adr_filename(filename: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def validate_adr_content(content: str) -> Tuple[bool, List[str]]:
+def validate_adr_content(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu d'un fichier ADR."""
     errors = []
 
@@ -57,7 +56,7 @@ def validate_adr_content(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_product_brief_md(content: str) -> Tuple[bool, List[str]]:
+def validate_product_brief_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de product-brief.md."""
     errors = []
 
@@ -79,7 +78,7 @@ def validate_product_brief_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_prd_md(content: str) -> Tuple[bool, List[str]]:
+def validate_prd_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de prd.md."""
     errors = []
 
@@ -100,7 +99,7 @@ def validate_prd_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_architecture_md(content: str) -> Tuple[bool, List[str]]:
+def validate_architecture_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de architecture.md."""
     errors = []
 
@@ -121,7 +120,7 @@ def validate_architecture_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_epics_md(content: str) -> Tuple[bool, List[str]]:
+def validate_epics_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de epics.md."""
     errors = []
 
@@ -136,7 +135,7 @@ def validate_epics_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_progress_md(content: str) -> Tuple[bool, List[str]]:
+def validate_progress_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de PROGRESS.md."""
     errors = []
 
@@ -156,7 +155,7 @@ def validate_progress_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_todo_md(content: str) -> Tuple[bool, List[str]]:
+def validate_todo_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de TODO.md."""
     errors = []
 
@@ -176,7 +175,7 @@ def validate_todo_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_changelog_md(content: str) -> Tuple[bool, List[str]]:
+def validate_changelog_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de CHANGELOG.md."""
     errors = []
 
@@ -191,7 +190,7 @@ def validate_changelog_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_readme_md(content: str) -> Tuple[bool, List[str]]:
+def validate_readme_md(content: str) -> tuple[bool, list[str]]:
     """Valide le contenu de README.md."""
     errors = []
 
@@ -212,7 +211,7 @@ def validate_readme_md(content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-def validate_dev_dir(dev_dir: Path) -> Tuple[bool, List[str]]:
+def validate_dev_dir(dev_dir: Path) -> tuple[bool, list[str]]:
     """Valide tous les fichiers de documentation dans _dev/."""
     all_errors = []
     all_valid = True
@@ -229,7 +228,7 @@ def validate_dev_dir(dev_dir: Path) -> Tuple[bool, List[str]]:
             all_errors.extend([f"README.md : {e}" for e in errors])
             all_valid = False
         else:
-            print(f"  ✓ README.md")
+            print("  ✓ README.md")
     else:
         all_errors.append("README.md manquant à la racine du projet")
         all_valid = False

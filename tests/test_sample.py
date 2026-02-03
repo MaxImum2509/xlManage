@@ -27,5 +27,6 @@ def test_com_mock(mock_excel_app, mock_workbook):
 def test_slow_test():
     """Test marked as slow."""
     import time
+
     time.sleep(0.1)  # Simulate slow operation
     assert True

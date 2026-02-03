@@ -1,4 +1,7 @@
 
+# Ignorer les répertoires temporaires
+_tmp*/
+
 # Ignorer les fichiers de configuration locaux
 *.local
 

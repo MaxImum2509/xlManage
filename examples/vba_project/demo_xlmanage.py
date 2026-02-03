@@ -30,9 +30,6 @@ from pathlib import Path
 # Ajoute src au path pour pouvoir importer xlmanage
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from xlmanage import ExcelManager
-from xlmanage.optimization import optimize_excel
-
 
 def main() -> None:
     """Fonction principale de démonstration."""
@@ -98,9 +95,9 @@ def main() -> None:
     print("\n" + "=" * 60)
     print("Démonstration terminée!")
     print("=" * 60)
-    print(f"\nFichiers créés:")
+    print("\nFichiers créés:")
     print(f"  - {output_file}")
-    print(f"\nModules disponibles:")
+    print("\nModules disponibles:")
     for f in modules_to_import:
         if f.exists():
             print(f"  - {f.name}")
