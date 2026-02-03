@@ -1,0 +1,46 @@
+
+# Ignorer les fichiers de configuration locaux
+*.local
+
+# Ignorer les fichiers de l'environnement virtuel
+.env
+venv/
+
+# Ignorer les fichiers de configuration de l'IDE
+.sublime
+.idea/
+.vscode/
+*.swp
+
+# Ignorer les fichiers de logs et de cache
+*.log
+*.cache
+
+# Ignorer les fichiers de documentation générés
+docs/_build/
+docs/build/
+
+# Ignorer les fichiers temporaires
+*.tmp
+*.bak
+
+# Ignorer les fichiers Excel temporaires
+~$*.xlsx
+~$*.xls
+
+# Ignorer les fichiers de build et de distribution
+build/
+dist/
+*.egg-info/
+
+# Ignorer les fichiers de dépendances (Pipenv obsolète)
+Pipfile
+Pipfile.lock
+
+# Ignorer les fichiers Python compilés
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignorer les fichiers de configuration de pytest
+.pytest_cache/

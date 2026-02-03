@@ -1,0 +1,8 @@
+feat(scope): short description
+
+Detailed description of changes:
+- Why this change is necessary
+- Problem solved
+- Impact on the system
+
+Closes #123
