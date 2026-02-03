@@ -1,0 +1,100 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "xlmanage"
+version = "0.1.0"
+description = "CLI utility for controlling Excel via COM automation"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.14"
+keywords = ["excel", "com", "automation", "cli", "pywin32"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+]
+authors = [
+    { name = "xlManage Contributors" },
+]
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "pywin32>=305",
+]
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.2,<10.0.0)",
+    "pytest-mock (>=3.15.1,<4.0.0)",
+    "pytest-cov (>=7.0.0,<8.0.0)",
+    "pytest-timeout (>=2.4.0,<3.0.0)",
+    "ruff (>=0.14.14,<0.15.0)",
+    "mypy (>=1.19.1,<2.0.0)",
+    "pywin32-stubs (>=1.0.7,<2.0.0)",
+    "pre-commit (>=4.5.1,<5.0.0)",
+    "sphinx (>=9.1.0,<10.0.0)",
+    "sphinx-rtd-theme (>=3.1.0,<4.0.0)",
+    "types-setuptools (>=80.10.0.20260124,<81.0.0.0)"
+]
+
+[project.scripts]
+xlmanage = "xlmanage.cli:main_entry"
+
+[tool.poetry]
+packages = [{ include = "xlmanage", from = "src" }]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["xlmanage"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+timeout = 60
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src/",
+    "--cov-report=term",
+    "--cov-report=html",
+    "--cov-fail-under=90",
+    "--timeout=60",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "setup.py"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+strict_optional = true
+
+[[tool.mypy.overrides]]
+module = "win32com.*"
+ignore_missing_imports = true
+
+[tool.pyright]
+include = ["src/**"]
+pythonVersion = "3.14"
+pythonPlatform = "Windows"
