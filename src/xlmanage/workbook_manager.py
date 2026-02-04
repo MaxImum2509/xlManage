@@ -31,6 +31,7 @@ from .exceptions import (
     ExcelConnectionError,
     WorkbookAlreadyOpenError,
     WorkbookNotFoundError,
+    WorkbookSaveError,
 )
 
 # Excel file format constants
@@ -229,4 +230,113 @@ class WorkbookManager:
                 ) from e
             else:
                 # Re-raise non-COM exceptions
+                raise
+
+    def create(self, path: Path, template: Path | None = None) -> WorkbookInfo:
+        """Create a new workbook.
+
+        Creates a new Excel workbook and saves it to the specified path.
+        Optionally uses a template file as starting point.
+
+        Args:
+            path: Destination path for the new workbook
+            template: Optional path to a template file (.xltx, .xltm, or .xlsx/.xlsm)
+
+        Returns:
+            WorkbookInfo with details about the created workbook
+
+        Raises:
+            WorkbookNotFoundError: If template file doesn't exist
+            WorkbookSaveError: If save operation fails
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> # Create blank workbook
+            >>> info = manager.create(Path("C:/data/new.xlsx"))
+
+            >>> # Create from template
+            >>> template = Path("C:/templates/report.xltx")
+            >>> info = manager.create(Path("C:/data/report.xlsx"), template=template)
+
+        Note:
+            The file format is automatically detected from the path extension.
+            Supported formats: .xlsx, .xlsm, .xls, .xlsb
+        """
+        # Step 1: Validate template if provided
+        if template is not None:
+            if not template.exists():
+                raise WorkbookNotFoundError(
+                    template,
+                    f"Template file not found: {template}",
+                )
+
+        # Step 2: Detect target file format
+        try:
+            file_format = _detect_file_format(path)
+        except ValueError as e:
+            raise WorkbookSaveError(
+                path,
+                message=f"Invalid file extension: {str(e)}",
+            ) from e
+
+        # Step 3: Create workbook
+        app = self._mgr.app
+
+        try:
+            if template is None:
+                # Create blank workbook
+                wb = app.Workbooks.Add()
+            else:
+                # Create from template
+                wb = app.Workbooks.Add(str(template.resolve()))
+
+            # Step 4: Save to destination path
+            abs_path = str(path.resolve())
+
+            # Step 4: Save to destination path and build info
+            try:
+                wb.SaveAs(abs_path, FileFormat=file_format)
+
+                # Step 5: Build WorkbookInfo - only reached if SaveAs succeeds
+                info = WorkbookInfo(
+                    name=wb.Name,
+                    full_path=Path(wb.FullName),
+                    read_only=wb.ReadOnly,
+                    saved=wb.Saved,
+                    sheets_count=wb.Worksheets.Count,
+                )
+                return info
+
+            except Exception as e:
+                # Clean up the unsaved workbook
+                try:
+                    wb.Close(SaveChanges=False)
+                    del wb
+                except Exception:
+                    pass
+
+                # Raise save error
+                if hasattr(e, "hresult"):
+                    raise WorkbookSaveError(
+                        path,
+                        hresult=getattr(e, "hresult"),
+                        message=f"Failed to save workbook: {str(e)}",
+                    ) from e
+                else:
+                    raise WorkbookSaveError(
+                        path,
+                        message=f"Failed to save workbook: {str(e)}",
+                    ) from e
+
+        except WorkbookSaveError:
+            # Re-raise our own exceptions
+            raise
+        except Exception as e:
+            # Wrap other COM errors
+            if hasattr(e, "hresult"):
+                raise ExcelConnectionError(
+                    getattr(e, "hresult"),
+                    f"Failed to create workbook: {str(e)}",
+                ) from e
+            else:
                 raise

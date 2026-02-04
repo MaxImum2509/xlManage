@@ -488,3 +488,236 @@ class TestWorkbookManagerOpen:
 
         with pytest.raises(ExcelConnectionError):
             wb_mgr.open(test_file)
+
+
+class TestWorkbookManagerCreate:
+    """Tests for WorkbookManager.create() method."""
+
+    def test_create_blank_workbook(self, tmp_path):
+        """Test creating a blank workbook."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        # Setup
+        test_file = tmp_path / "new.xlsx"
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.Name = "new.xlsx"
+        mock_wb.FullName = str(test_file)
+        mock_wb.ReadOnly = False
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 1
+        mock_app.Workbooks.Add.return_value = mock_wb
+
+        # Test
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        info = wb_mgr.create(test_file)
+
+        # Verify
+        assert info.name == "new.xlsx"
+        assert info.sheets_count == 1
+
+        # Verify COM calls
+        mock_app.Workbooks.Add.assert_called_once_with()  # No template
+        mock_wb.SaveAs.assert_called_once()
+
+        # Verify SaveAs parameters
+        save_call = mock_wb.SaveAs.call_args
+        assert str(test_file) in str(save_call[0][0])  # First arg is path
+        assert save_call.kwargs.get("FileFormat") == 51  # .xlsx format
+
+    def test_create_with_template(self, tmp_path):
+        """Test creating workbook from template."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        # Create template file
+        template_file = tmp_path / "template.xltx"
+        template_file.touch()
+
+        test_file = tmp_path / "from_template.xlsx"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.Name = "from_template.xlsx"
+        mock_wb.FullName = str(test_file)
+        mock_wb.ReadOnly = False
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 3
+        mock_app.Workbooks.Add.return_value = mock_wb
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        info = wb_mgr.create(test_file, template=template_file)
+
+        # Verify template was used
+        mock_app.Workbooks.Add.assert_called_once()
+        call_arg = mock_app.Workbooks.Add.call_args[0][0]
+        assert str(template_file) in call_arg
+
+    def test_create_xlsm_format(self, tmp_path):
+        """Test creating macro-enabled workbook."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        test_file = tmp_path / "macros.xlsm"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.Name = "macros.xlsm"
+        mock_wb.FullName = str(test_file)
+        mock_wb.ReadOnly = False
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 1
+        mock_app.Workbooks.Add.return_value = mock_wb
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        info = wb_mgr.create(test_file)
+
+        # Verify .xlsm format (52)
+        save_call = mock_wb.SaveAs.call_args
+        assert save_call.kwargs.get("FileFormat") == 52
+
+    def test_create_xls_legacy_format(self, tmp_path):
+        """Test creating legacy Excel 97-2003 workbook."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        test_file = tmp_path / "legacy.xls"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.Name = "legacy.xls"
+        mock_wb.FullName = str(test_file)
+        mock_wb.ReadOnly = False
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 1
+        mock_app.Workbooks.Add.return_value = mock_wb
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        info = wb_mgr.create(test_file)
+
+        # Verify .xls format (56)
+        save_call = mock_wb.SaveAs.call_args
+        assert save_call.kwargs.get("FileFormat") == 56
+
+    def test_create_template_not_found(self, tmp_path):
+        """Test creating with non-existent template."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        missing_template = tmp_path / "missing_template.xltx"
+        test_file = tmp_path / "new.xlsx"
+
+        mock_excel_mgr = Mock()
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookNotFoundError) as exc_info:
+            wb_mgr.create(test_file, template=missing_template)
+
+        assert exc_info.value.path == missing_template
+        assert "template" in str(exc_info.value).lower()
+
+    def test_create_invalid_extension(self, tmp_path):
+        """Test creating with invalid file extension."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookSaveError
+
+        test_file = tmp_path / "invalid.txt"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookSaveError) as exc_info:
+            wb_mgr.create(test_file)
+
+        assert exc_info.value.path == test_file
+        assert "extension" in str(exc_info.value).lower()
+
+    def test_create_save_fails(self, tmp_path):
+        """Test handling SaveAs failure."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookSaveError
+
+        test_file = tmp_path / "save_fails.xlsx"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        # SaveAs raises error
+        save_error = Exception("Access denied")
+        save_error.hresult = 0x80070005
+        mock_wb.SaveAs.side_effect = save_error
+        mock_app.Workbooks.Add.return_value = mock_wb
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookSaveError) as exc_info:
+            wb_mgr.create(test_file)
+
+        assert exc_info.value.hresult == 0x80070005
+        assert exc_info.value.path == test_file
+
+        # Verify cleanup: workbook was closed without saving
+        mock_wb.Close.assert_called_once_with(SaveChanges=False)
+
+    def test_create_com_error(self, tmp_path):
+        """Test handling COM error during creation."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import ExcelConnectionError
+
+        test_file = tmp_path / "error.xlsx"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Workbooks.Add raises COM error
+        com_error = Exception("Excel is busy")
+        com_error.hresult = 0x80080005
+        mock_app.Workbooks.Add.side_effect = com_error
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(ExcelConnectionError) as exc_info:
+            wb_mgr.create(test_file)
+
+        assert exc_info.value.hresult == 0x80080005
+
+    def test_create_cleanup_fails_silently(self, tmp_path):
+        """Test that cleanup failure doesn't mask save error."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookSaveError
+
+        test_file = tmp_path / "cleanup_fails.xlsx"
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        # SaveAs fails
+        mock_wb.SaveAs.side_effect = Exception("Save failed")
+        # Close also fails
+        mock_wb.Close.side_effect = Exception("Close failed")
+        mock_app.Workbooks.Add.return_value = mock_wb
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        # Should raise SaveError, not Close error
+        with pytest.raises(WorkbookSaveError) as exc_info:
+            wb_mgr.create(test_file)
+
+        assert "save" in str(exc_info.value).lower()
