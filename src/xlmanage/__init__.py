@@ -8,10 +8,12 @@ __all__ = [
     "excel_manager",
     "exceptions",
     "workbook_manager",
+    "worksheet_manager",
     "ExcelManager",
     "InstanceInfo",
     "WorkbookManager",
     "WorkbookInfo",
+    "WorksheetInfo",
     "ExcelConnectionError",
     "ExcelInstanceNotFoundError",
     "ExcelManageError",
@@ -19,10 +21,10 @@ __all__ = [
     "WorkbookNotFoundError",
     "WorkbookAlreadyOpenError",
     "WorkbookSaveError",
-    "WorksheetNotFoundError",
     "WorksheetAlreadyExistsError",
     "WorksheetDeleteError",
     "WorksheetNameError",
+    "WorksheetNotFoundError",
 ]
 
 # Import exceptions for easy access
@@ -41,4 +43,11 @@ from .exceptions import (
     WorksheetNameError,
     WorksheetNotFoundError,
 )
-from .workbook_manager import WorkbookInfo, WorkbookManager
+from .workbook_manager import WorkbookInfo as WorkbookInfoClass
+from .workbook_manager import WorkbookManager
+from .worksheet_manager import WorksheetInfo as WorksheetInfoData
+
+# Export both for clarity
+# Note: Use WorkbookInfoClass for workbook info, WorksheetInfoData for worksheet info
+WorkbookInfo = WorkbookInfoClass
+WorksheetInfo = WorksheetInfoData
