@@ -286,9 +286,12 @@ poetry run pytest tests/test_workbook_manager.py::TestDetectFileFormat -v
 
 ### Définition of Done
 
-- [ ] WorkbookInfo dataclass créée avec 5 champs
-- [ ] FILE_FORMAT_MAP défini avec les 4 formats
-- [ ] `_detect_file_format()` implémentée avec gestion d'erreur
-- [ ] Tous les tests passent (minimum 15 tests)
-- [ ] Couverture de code 100% pour la dataclass et la fonction
-- [ ] Documentation complète (docstrings avec exemples)
+- [x] WorkbookInfo dataclass créée avec 5 champs
+- [x] FILE_FORMAT_MAP défini avec les 4 formats
+- [x] `_detect_file_format()` implémentée avec gestion d'erreur
+- [x] Tous les tests passent (minimum 15 tests)
+- [x] Couverture de code 100% pour la dataclass et la fonction
+- [x] Documentation complète (docstrings avec exemples)
+
+**Statut** : ✅ TERMINÉ - Commit 9590a69
+**Rapport** : [_dev/reports/epic06-story02-implémentation.md](_dev/reports/epic06-story02-implémentation.md)

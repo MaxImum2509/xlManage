@@ -245,8 +245,11 @@ poetry run pytest tests/test_exceptions.py::TestWorkbookSaveError -v
 
 ## Définition of Done
 
-- [ ] Les 3 exceptions sont créées avec docstrings complètes
-- [ ] Les exceptions sont exportées dans `__init__.py`
-- [ ] Tous les tests passent (minimum 9 tests)
-- [ ] Couverture de code 100% pour les nouvelles exceptions
-- [ ] Le code suit les conventions du projet (pas d'emojis, docstrings en anglais)
+- [x] Les 3 exceptions sont créées avec docstrings complètes
+- [x] Les exceptions sont exportées dans `__init__.py`
+- [x] Tous les tests passent (minimum 9 tests)
+- [x] Couverture de code 100% pour les nouvelles exceptions
+- [x] Le code suit les conventions du projet (pas d'emojis, docstrings en anglais)
+
+**Statut** : ✅ TERMINÉ - Commit b923204
+**Rapport** : [_dev/reports/epic06-story01-implémentation.md](_dev/reports/epic06-story01-implémentation.md)

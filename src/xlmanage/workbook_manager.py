@@ -84,3 +84,52 @@ def _detect_file_format(path: Path) -> int:
         )
 
     return FILE_FORMAT_MAP[extension]
+
+
+def _find_open_workbook(app: CDispatch, path: Path) -> CDispatch | None:
+    """Find an open workbook by path.
+
+    Searches for a workbook in the Excel instance by comparing paths.
+    First tries to match by FullName (complete path), then falls back
+    to matching by Name (filename only).
+
+    Args:
+        app: Excel Application COM object
+        path: Path to the workbook to find
+
+    Returns:
+        Workbook COM object if found, None otherwise
+
+    Note:
+        The search is case-insensitive on Windows.
+        Paths are resolved to absolute paths before comparison.
+
+    Examples:
+        >>> app = win32com.client.Dispatch("Excel.Application")
+        >>> wb = _find_open_workbook(app, Path("C:/data/test.xlsx"))
+        >>> if wb:
+        ...     print(f"Found: {wb.Name}")
+    """
+    # Resolve to absolute path for comparison
+    resolved_path = path.resolve()
+    filename = path.name
+
+    # Iterate through all open workbooks
+    for wb in app.Workbooks:
+        try:
+            # Method 1: Compare by full path (most reliable)
+            wb_full_path = Path(wb.FullName).resolve()
+            if wb_full_path == resolved_path:
+                return wb
+
+            # Method 2: Compare by filename only (fallback)
+            # This handles cases where the path might be different
+            # but it's actually the same file (network paths, etc.)
+            if wb.Name.lower() == filename.lower():
+                return wb
+
+        except Exception:
+            # If we can't read wb.FullName or wb.Name, skip this workbook
+            continue
+
+    return None

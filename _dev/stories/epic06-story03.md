@@ -1,137 +1,105 @@
-"""
-Tests for WorkbookManager functionality.
-"""
+# Epic 6 - Story 3 : Implémenter la fonction utilitaire _find_open_workbook
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock
+## Vue d'ensemble
 
-from xlmanage.workbook_manager import (
-    WorkbookInfo,
-    FILE_FORMAT_MAP,
-    _detect_file_format,
-)
+**En tant que** développeur
+**Je veux** une fonction pour chercher un classeur déjà ouvert dans Excel
+**Afin de** éviter d'ouvrir deux fois le même fichier
 
+## Critères d'acceptation
 
-class TestWorkbookInfo:
-    """Tests for WorkbookInfo dataclass."""
+1. ✅ Fonction `_find_open_workbook()` implémentée
+2. ✅ Recherche d'abord par FullName (chemin complet)
+3. ✅ Recherche ensuite par Name (nom de fichier) en fallback
+4. ✅ Retourne None si non trouvé
+5. ✅ Tests couvrent tous les scénarios
 
-    def test_workbook_info_creation(self):
-        """Test creating WorkbookInfo instance."""
-        info = WorkbookInfo(
-            name="test.xlsx",
-            full_path=Path("C:/data/test.xlsx"),
-            read_only=False,
-            saved=True,
-            sheets_count=3,
-        )
+## Tâches techniques
 
-        assert info.name == "test.xlsx"
-        assert info.full_path == Path("C:/data/test.xlsx")
-        assert info.read_only is False
-        assert info.saved is True
-        assert info.sheets_count == 3
+### Tâche 3.1 : Implémenter _find_open_workbook
 
-    def test_workbook_info_fields(self):
-        """Test all fields are accessible."""
-        info = WorkbookInfo(
-            name="data.xlsm",
-            full_path=Path("D:/projects/data.xlsm"),
-            read_only=True,
-            saved=False,
-            sheets_count=5,
-        )
+**Fichier** : `src/xlmanage/workbook_manager.py`
 
-        # Verify all fields
-        assert isinstance(info.name, str)
-        assert isinstance(info.full_path, Path)
-        assert isinstance(info.read_only, bool)
-        assert isinstance(info.saved, bool)
-        assert isinstance(info.sheets_count, int)
+Ajouter cette fonction après `_detect_file_format()` :
 
+```python
+def _find_open_workbook(app: CDispatch, path: Path) -> CDispatch | None:
+    """Find an open workbook by path.
 
-class TestFileFormatMap:
-    """Tests for FILE_FORMAT_MAP constant."""
+    Searches for a workbook in the Excel instance by comparing paths.
+    First tries to match by FullName (complete path), then falls back
+    to matching by Name (filename only).
 
-    def test_file_format_map_keys(self):
-        """Test FILE_FORMAT_MAP has all expected extensions."""
-        expected_extensions = {".xlsx", ".xlsm", ".xls", ".xlsb", ".xltx"}
-        assert set(FILE_FORMAT_MAP.keys()) == expected_extensions
+    Args:
+        app: Excel Application COM object
+        path: Path to the workbook to find
 
-    def test_file_format_map_values(self):
-        """Test FILE_FORMAT_MAP values are correct."""
-        assert FILE_FORMAT_MAP[".xlsx"] == 51
-        assert FILE_FORMAT_MAP[".xlsm"] == 52
-        assert FILE_FORMAT_MAP[".xls"] == 56
-        assert FILE_FORMAT_MAP[".xlsb"] == 50
-        assert FILE_FORMAT_MAP[".xltx"] == 54
+    Returns:
+        Workbook COM object if found, None otherwise
 
+    Note:
+        The search is case-insensitive on Windows.
+        Paths are resolved to absolute paths before comparison.
 
-class TestDetectFileFormat:
-    """Tests for _detect_file_format function."""
+    Examples:
+        >>> app = win32com.client.Dispatch("Excel.Application")
+        >>> wb = _find_open_workbook(app, Path("C:/data/test.xlsx"))
+        >>> if wb:
+        ...     print(f"Found: {wb.Name}")
+    """
+    # Resolve to absolute path for comparison
+    resolved_path = path.resolve()
+    filename = path.name
 
-    def test_detect_xlsx_format(self):
-        """Test detecting .xlsx format."""
-        path = Path("C:/data/file.xlsx")
-        assert _detect_file_format(path) == 51
+    # Iterate through all open workbooks
+    for wb in app.Workbooks:
+        try:
+            # Method 1: Compare by full path (most reliable)
+            wb_full_path = Path(wb.FullName).resolve()
+            if wb_full_path == resolved_path:
+                return wb
 
-    def test_detect_xlsm_format(self):
-        """Test detecting .xlsm format."""
-        path = Path("D:/projects/macro.xlsm")
-        assert _detect_file_format(path) == 52
+            # Method 2: Compare by filename only (fallback)
+            # This handles cases where the path might be different
+            # but it's actually the same file (network paths, etc.)
+            if wb.Name.lower() == filename.lower():
+                return wb
 
-    def test_detect_xls_format(self):
-        """Test detecting .xls format."""
-        path = Path("E:/legacy/old.xls")
-        assert _detect_file_format(path) == 56
+        except Exception:
+            # If we can't read wb.FullName or wb.Name, skip this workbook
+            continue
 
-    def test_detect_xlsb_format(self):
-        """Test detecting .xlsb format."""
-        path = Path("F:/binary/data.xlsb")
-        assert _detect_file_format(path) == 50
+    return None
+```
 
-    def test_detect_format_case_insensitive(self):
-        """Test format detection is case-insensitive."""
-        assert _detect_file_format(Path("test.XLSX")) == 51
-        assert _detect_file_format(Path("test.XlSm")) == 52
-        assert _detect_file_format(Path("test.XLS")) == 56
-        assert _detect_file_format(Path("test.XLSB")) == 50
+**Points d'attention** :
 
-    def test_detect_format_unsupported_extension(self):
-        """Test ValueError is raised for unsupported extensions."""
-        with pytest.raises(ValueError) as exc_info:
-            _detect_file_format(Path("document.docx"))
+1. **Ordre de recherche** : FullName d'abord, puis Name
+   - FullName est plus fiable car c'est le chemin complet
+   - Name est un fallback pour les cas où le chemin peut différer (réseau, liens symboliques)
 
-        assert "Unsupported file extension" in str(exc_info.value)
-        assert ".docx" in str(exc_info.value)
-        assert ".xlsx" in str(exc_info.value)  # Lists supported formats
+2. **Resolution des chemins** : utiliser `path.resolve()` pour normaliser
+   - Convertit les chemins relatifs en absolus
+   - Résout les `..` et `.`
+   - Normalise les séparateurs
 
-    def test_detect_format_no_extension(self):
-        """Test ValueError for files without extension."""
-        with pytest.raises(ValueError) as exc_info:
-            _detect_file_format(Path("file_without_extension"))
+3. **Comparaison case-insensitive** : Windows ne distingue pas majuscules/minuscules
+   - `wb.Name.lower() == filename.lower()`
 
-        assert "Unsupported file extension" in str(exc_info.value)
+4. **Gestion d'erreur** : si `wb.FullName` ou `wb.Name` raise (classeur corrompu, etc.)
+   - On continue avec le prochain classeur
+   - On ne fait pas échouer toute la recherche
 
-    def test_detect_format_wrong_extension(self):
-        """Test ValueError for wrong extensions."""
-        invalid_files = [
-            Path("data.csv"),
-            Path("data.txt"),
-            Path("data.pdf"),
-            Path("data.xml"),
-        ]
+5. **Retour None** : si aucun classeur ne correspond
+   - Permet à l'appelant de distinguer "non trouvé" de "erreur"
 
-        for path in invalid_files:
-            with pytest.raises(ValueError):
-                _detect_file_format(path)
+### Tâche 3.2 : Écrire les tests
 
-    def test_detect_xltx_format(self):
-        """Test detecting .xltx format."""
-        path = Path("C:/templates/template.xltx")
-        assert _detect_file_format(path) == 54
+**Fichier** : `tests/test_workbook_manager.py`
 
+Ajouter cette classe de tests :
 
+```python
 class TestFindOpenWorkbook:
     """Tests for _find_open_workbook function."""
 
@@ -291,3 +259,21 @@ class TestFindOpenWorkbook:
 
         # Should resolve and find it
         assert result == mock_wb
+```
+
+**Commande de test** :
+```bash
+poetry run pytest tests/test_workbook_manager.py::TestFindOpenWorkbook -v
+```
+
+### Définition of Done
+
+- [x] Fonction `_find_open_workbook()` implémentée
+- [x] Recherche par FullName puis Name
+- [x] Gestion des exceptions lors de l'itération
+- [x] Tous les tests passent (minimum 8 tests)
+- [x] Couverture de code 100%
+- [x] Documentation complète avec exemples
+
+**Statut** : ✅ TERMINÉ - Commit 711b5d7
+**Rapport** : [_dev/reports/epic06-story03-implémentation.md](_dev/reports/epic06-story03-implémentation.md)
