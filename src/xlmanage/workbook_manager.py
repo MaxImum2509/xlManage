@@ -340,3 +340,135 @@ class WorkbookManager:
                 ) from e
             else:
                 raise
+
+    def close(self, path: Path, save: bool = True, force: bool = False) -> None:
+        """Close an open workbook.
+
+        Closes a workbook that is currently open in Excel.
+        Optionally saves changes before closing.
+
+        Args:
+            path: Path to the workbook to close
+            save: If True, save changes before closing (default: True)
+            force: If True, suppress confirmation dialogs (default: False)
+
+        Raises:
+            WorkbookNotFoundError: If the workbook is not currently open
+            ExcelConnectionError: If COM connection fails
+
+        Example:
+            >>> # Close without saving
+            >>> manager.close(Path("C:/data/temp.xlsx"), save=False)
+
+            >>> # Close with save, no dialogs
+            >>> manager.close(Path("C:/data/work.xlsx"), save=True, force=True)
+
+        Note:
+            If save=True and the workbook has never been saved,
+            Excel may still show a "Save As" dialog unless force=True.
+        """
+        app = self._mgr.app
+
+        # Step 1: Find the open workbook
+        wb = _find_open_workbook(app, path)
+        if wb is None:
+            raise WorkbookNotFoundError(
+                path,
+                f"Workbook is not open: {path.name}",
+            )
+
+        # Step 2: Configure alerts
+        if force:
+            app.DisplayAlerts = False
+
+        try:
+            # Step 3: Close the workbook
+            wb.Close(SaveChanges=save)
+
+            # Step 4: Clean up COM reference
+            del wb
+
+        finally:
+            # Step 5: Restore alerts
+            if force:
+                app.DisplayAlerts = True
+
+    def save(self, path: Path, output: Path | None = None) -> None:
+        """Save a workbook.
+
+        Saves an open workbook. Can save to the same file (Save)
+        or to a different file (SaveAs).
+
+        Args:
+            path: Path to the currently open workbook
+            output: Optional destination path for SaveAs.
+                    If None, saves to the current file (Save).
+
+        Raises:
+            WorkbookNotFoundError: If the workbook is not currently open
+            WorkbookSaveError: If save operation fails
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> # Save to current file
+            >>> manager.save(Path("C:/data/work.xlsx"))
+
+            >>> # Save to different file (SaveAs)
+            >>> manager.save(
+            ...     Path("C:/data/work.xlsx"),
+            ...     output=Path("C:/backup/work_v2.xlsx")
+            ... )
+
+        Note:
+            When using SaveAs with output parameter, the file format
+            is automatically detected from the output file extension.
+        """
+        app = self._mgr.app
+
+        # Step 1: Find the open workbook
+        wb = _find_open_workbook(app, path)
+        if wb is None:
+            raise WorkbookNotFoundError(
+                path,
+                f"Workbook is not open: {path.name}",
+            )
+
+        try:
+            if output is None:
+                # Step 2a: Save to current file
+                wb.Save()
+            else:
+                # Step 2b: SaveAs to different file
+
+                # Detect file format from output extension
+                try:
+                    file_format = _detect_file_format(output)
+                except ValueError as e:
+                    raise WorkbookSaveError(
+                        output,
+                        message=f"Invalid file extension: {str(e)}",
+                    ) from e
+
+                # Convert to absolute path
+                abs_path = str(output.resolve())
+
+                # Save with format
+                wb.SaveAs(abs_path, FileFormat=file_format)
+
+        except WorkbookSaveError:
+            # Re-raise our exceptions
+            raise
+        except Exception as e:
+            # Wrap COM errors
+            target = output if output is not None else path
+            if hasattr(e, "hresult"):
+                raise WorkbookSaveError(
+                    target,
+                    hresult=getattr(e, "hresult"),
+                    message=f"Failed to save workbook: {str(e)}",
+                ) from e
+            else:
+                raise WorkbookSaveError(
+                    target,
+                    message=f"Failed to save workbook: {str(e)}",
+                ) from e

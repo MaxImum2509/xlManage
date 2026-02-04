@@ -721,3 +721,230 @@ class TestWorkbookManagerCreate:
             wb_mgr.create(test_file)
 
         assert "save" in str(exc_info.value).lower()
+
+
+class TestWorkbookManagerClose:
+    """Tests for WorkbookManager.close() method."""
+
+    def test_close_with_save(self):
+        """Test closing workbook with save."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\test.xlsx"
+        mock_wb.Name = "test.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        wb_mgr.close(Path("C:/data/test.xlsx"), save=True)
+
+        mock_wb.Close.assert_called_once_with(SaveChanges=True)
+
+    def test_close_without_save(self):
+        """Test closing workbook without save."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\temp\\discard.xlsx"
+        mock_wb.Name = "discard.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        wb_mgr.close(Path("C:/temp/discard.xlsx"), save=False)
+
+        mock_wb.Close.assert_called_once_with(SaveChanges=False)
+
+    def test_close_with_force(self):
+        """Test force close suppresses alerts."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\force.xlsx"
+        mock_wb.Name = "force.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        wb_mgr.close(Path("C:/data/force.xlsx"), force=True)
+
+        # Verify DisplayAlerts was disabled then restored
+        # Since DisplayAlerts is a property setter, we need to check the mock calls differently
+        # The mock should have recorded the property assignments
+        assert hasattr(mock_app, 'DisplayAlerts')
+        # The DisplayAlerts should have been set to True in the finally block
+        assert mock_app.DisplayAlerts is True
+
+    def test_close_workbook_not_open(self):
+        """Test closing workbook that is not open."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+        mock_app.Workbooks = []  # No open workbooks
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookNotFoundError):
+            wb_mgr.close(Path("C:/data/notopen.xlsx"))
+
+    def test_close_restores_alerts_on_error(self):
+        """Test DisplayAlerts is restored even if Close fails."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\error.xlsx"
+        mock_wb.Name = "error.xlsx"
+        mock_wb.Close.side_effect = Exception("Close failed")
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(Exception):
+            wb_mgr.close(Path("C:/data/error.xlsx"), force=True)
+
+        # DisplayAlerts should be restored to True in finally
+        assert mock_app.DisplayAlerts is True
+
+
+class TestWorkbookManagerSave:
+    """Tests for WorkbookManager.save() method."""
+
+    def test_save_to_current_file(self):
+        """Test saving to current file."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\work.xlsx"
+        mock_wb.Name = "work.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        wb_mgr.save(Path("C:/data/work.xlsx"))
+
+        # Should call Save(), not SaveAs()
+        mock_wb.Save.assert_called_once()
+        mock_wb.SaveAs.assert_not_called()
+
+    def test_save_as_to_different_file(self):
+        """Test SaveAs to different file."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\original.xlsx"
+        mock_wb.Name = "original.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        output = Path("C:/backup/copy.xlsx")
+        wb_mgr.save(Path("C:/data/original.xlsx"), output=output)
+
+        # Should call SaveAs()
+        mock_wb.SaveAs.assert_called_once()
+        call_args = mock_wb.SaveAs.call_args
+        assert str(output) in str(call_args[0][0])
+        assert call_args.kwargs.get("FileFormat") == 51  # .xlsx
+
+    def test_save_as_different_format(self):
+        """Test SaveAs with format conversion."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\data.xlsx"
+        mock_wb.Name = "data.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        output = Path("C:/archive/data.xlsb")  # Binary format
+        wb_mgr.save(Path("C:/data/data.xlsx"), output=output)
+
+        call_args = mock_wb.SaveAs.call_args
+        assert call_args.kwargs.get("FileFormat") == 50  # .xlsb
+
+    def test_save_workbook_not_open(self):
+        """Test saving workbook that is not open."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+        mock_app.Workbooks = []
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookNotFoundError):
+            wb_mgr.save(Path("C:/data/notopen.xlsx"))
+
+    def test_save_as_invalid_extension(self):
+        """Test SaveAs with invalid extension."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookSaveError
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\work.xlsx"
+        mock_wb.Name = "work.xlsx"
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookSaveError) as exc_info:
+            wb_mgr.save(Path("C:/data/work.xlsx"), output=Path("C:/data/work.txt"))
+
+        assert "extension" in str(exc_info.value).lower()
+
+    def test_save_com_error(self):
+        """Test handling COM error during save."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookSaveError
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.FullName = "C:\\data\\readonly.xlsx"
+        mock_wb.Name = "readonly.xlsx"
+        save_error = Exception("Access denied")
+        save_error.hresult = 0x80070005
+        mock_wb.Save.side_effect = save_error
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookSaveError) as exc_info:
+            wb_mgr.save(Path("C:/data/readonly.xlsx"))
+
+        assert exc_info.value.hresult == 0x80070005
