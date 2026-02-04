@@ -781,7 +781,7 @@ class TestWorkbookManagerClose:
         # Verify DisplayAlerts was disabled then restored
         # Since DisplayAlerts is a property setter, we need to check the mock calls differently
         # The mock should have recorded the property assignments
-        assert hasattr(mock_app, 'DisplayAlerts')
+        assert hasattr(mock_app, "DisplayAlerts")
         # The DisplayAlerts should have been set to True in the finally block
         assert mock_app.DisplayAlerts is True
 
@@ -948,3 +948,110 @@ class TestWorkbookManagerSave:
             wb_mgr.save(Path("C:/data/readonly.xlsx"))
 
         assert exc_info.value.hresult == 0x80070005
+
+
+class TestWorkbookManagerList:
+    """Tests for WorkbookManager.list() method."""
+
+    def test_list_no_workbooks(self):
+        """Test listing when no workbooks are open."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+        mock_app.Workbooks = []
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        workbooks = wb_mgr.list()
+
+        assert workbooks == []
+
+    def test_list_single_workbook(self):
+        """Test listing single workbook."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.Name = "test.xlsx"
+        mock_wb.FullName = "C:\\data\\test.xlsx"
+        mock_wb.ReadOnly = False
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 3
+        mock_app.Workbooks = [mock_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        workbooks = wb_mgr.list()
+
+        assert len(workbooks) == 1
+        assert workbooks[0].name == "test.xlsx"
+        assert workbooks[0].sheets_count == 3
+
+    def test_list_multiple_workbooks(self):
+        """Test listing multiple workbooks."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb1 = Mock()
+        mock_wb1.Name = "file1.xlsx"
+        mock_wb1.FullName = "C:\\data\\file1.xlsx"
+        mock_wb1.ReadOnly = False
+        mock_wb1.Saved = True
+        mock_wb1.Worksheets.Count = 2
+
+        mock_wb2 = Mock()
+        mock_wb2.Name = "file2.xlsm"
+        mock_wb2.FullName = "C:\\data\\file2.xlsm"
+        mock_wb2.ReadOnly = True
+        mock_wb2.Saved = False
+        mock_wb2.Worksheets.Count = 5
+
+        mock_app.Workbooks = [mock_wb1, mock_wb2]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        workbooks = wb_mgr.list()
+
+        assert len(workbooks) == 2
+        assert workbooks[0].name == "file1.xlsx"
+        assert workbooks[1].name == "file2.xlsm"
+        assert workbooks[1].read_only is True
+
+    def test_list_with_error_workbook(self):
+        """Test listing continues when one workbook raises error."""
+        from xlmanage.workbook_manager import WorkbookManager
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb1 = Mock()
+        mock_wb1.Name = "good.xlsx"
+        mock_wb1.FullName = "C:\\data\\good.xlsx"
+        mock_wb1.ReadOnly = False
+        mock_wb1.Saved = True
+        mock_wb1.Worksheets.Count = 1
+
+        mock_wb2 = Mock()
+        type(mock_wb2).Name = Mock(side_effect=Exception("Corrupted"))
+
+        mock_wb3 = Mock()
+        mock_wb3.Name = "good2.xlsx"
+        mock_wb3.FullName = "C:\\data\\good2.xlsx"
+        mock_wb3.ReadOnly = False
+        mock_wb3.Saved = True
+        mock_wb3.Worksheets.Count = 2
+
+        mock_app.Workbooks = [mock_wb1, mock_wb2, mock_wb3]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        workbooks = wb_mgr.list()
+
+        assert len(workbooks) == 2
+        assert workbooks[0].name == "good.xlsx"
+        assert workbooks[1].name == "good2.xlsx"

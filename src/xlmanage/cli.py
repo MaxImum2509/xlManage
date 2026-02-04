@@ -17,13 +17,33 @@ You should have received a copy of the GNU General Public License
 along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from .excel_manager import ExcelManager
-from .exceptions import ExcelConnectionError, ExcelManageError
+try:
+    from .excel_manager import ExcelManager
+    from .exceptions import (
+        ExcelConnectionError,
+        ExcelManageError,
+        WorkbookAlreadyOpenError,
+        WorkbookNotFoundError,
+        WorkbookSaveError,
+    )
+    from .workbook_manager import WorkbookManager
+except ImportError:
+    from xlmanage.excel_manager import ExcelManager
+    from xlmanage.exceptions import (
+        ExcelConnectionError,
+        ExcelManageError,
+        WorkbookAlreadyOpenError,
+        WorkbookNotFoundError,
+        WorkbookSaveError,
+    )
+    from xlmanage.workbook_manager import WorkbookManager
 
 app = typer.Typer(name="xlmanage", help="Excel automation CLI tool")
 console = Console()
@@ -295,6 +315,323 @@ def status():
             Panel.fit(
                 f"[red]✗[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
                 title="Unexpected Error",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+workbook_app = typer.Typer(help="Manage Excel workbooks")
+app.add_typer(workbook_app, name="workbook")
+
+
+@workbook_app.command("open")
+def workbook_open(
+    path: Path = typer.Argument(..., help="Path to the workbook file"),
+    read_only: bool = typer.Option(
+        False,
+        "--read-only",
+        "-r",
+        help="Open in read-only mode",
+    ),
+):
+    """Open an existing workbook.
+
+    Opens a workbook file in the active Excel instance.
+    The file must exist on disk.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            wb_mgr = WorkbookManager(excel_mgr)
+            info = wb_mgr.open(path, read_only=read_only)
+
+            mode = "lecture seule" if info.read_only else "lecture/écriture"
+            saved_status = "sauvegardé" if info.saved else "non sauvegardé"
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Classeur ouvert avec succès\n\n"
+                    f"[bold]Nom :[/bold] {info.name}\n"
+                    f"[bold]Chemin :[/bold] {info.full_path}\n"
+                    f"[bold]Mode :[/bold] {mode}\n"
+                    f"[bold]État :[/bold] {saved_status}\n"
+                    f"[bold]Feuilles :[/bold] {info.sheets_count}",
+                    title="Classeur ouvert",
+                    border_style="green",
+                )
+            )
+
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Fichier introuvable\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookAlreadyOpenError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur déjà ouvert\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@workbook_app.command("create")
+def workbook_create(
+    path: Path = typer.Argument(..., help="Path for the new workbook"),
+    template: Path = typer.Option(
+        None,
+        "--template",
+        "-t",
+        help="Template file to use",
+    ),
+):
+    """Create a new workbook.
+
+    Creates a new Excel workbook and saves it to the specified path.
+    Optionally uses a template file as starting point.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            wb_mgr = WorkbookManager(excel_mgr)
+            info = wb_mgr.create(path, template=template)
+
+            template_info = f"Basé sur : {template.name}" if template else "Vierge"
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Classeur créé avec succès\n\n"
+                    f"[bold]Nom :[/bold] {info.name}\n"
+                    f"[bold]Chemin :[/bold] {info.full_path}\n"
+                    f"[bold]Type :[/bold] {template_info}\n"
+                    f"[bold]Feuilles :[/bold] {info.sheets_count}",
+                    title="Classeur créé",
+                    border_style="green",
+                )
+            )
+
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Template introuvable\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookSaveError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Échec de sauvegarde\n\n"
+                f"[bold]Chemin :[/bold] {e.path}\n"
+                f"[bold]Raison :[/bold] {e.message}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@workbook_app.command("close")
+def workbook_close(
+    path: Path = typer.Argument(..., help="Path to the workbook to close"),
+    save: bool = typer.Option(
+        True,
+        "--save/--no-save",
+        help="Save changes before closing",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force close without confirmation dialogs",
+    ),
+):
+    """Close an open workbook.
+
+    Closes a workbook that is currently open.
+    By default, saves changes before closing.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            wb_mgr = WorkbookManager(excel_mgr)
+            wb_mgr.close(path, save=save, force=force)
+
+            save_info = "avec sauvegarde" if save else "sans sauvegarde"
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Classeur fermé {save_info}\n\n"
+                    f"[bold]Fichier :[/bold] {path.name}",
+                    title="Succès",
+                    border_style="green",
+                )
+            )
+
+    except WorkbookNotFoundError:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur non ouvert\n\n"
+                f"[bold]Fichier :[/bold] {path.name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@workbook_app.command("save")
+def workbook_save(
+    path: Path = typer.Argument(..., help="Path to the open workbook"),
+    output: Path = typer.Option(
+        None,
+        "--as",
+        "-o",
+        help="Save to a different file (SaveAs)",
+    ),
+):
+    """Save a workbook.
+
+    Saves an open workbook to disk.
+    Use --as to save to a different file (SaveAs).
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            wb_mgr = WorkbookManager(excel_mgr)
+            wb_mgr.save(path, output=output)
+
+            if output:
+                target = f"{path.name} → {output.name}"
+                operation = "SaveAs"
+            else:
+                target = path.name
+                operation = "Save"
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Classeur sauvegardé\n\n"
+                    f"[bold]Opération :[/bold] {operation}\n"
+                    f"[bold]Fichier :[/bold] {target}",
+                    title="Succès",
+                    border_style="green",
+                )
+            )
+
+    except WorkbookNotFoundError:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur non ouvert\n\n"
+                f"[bold]Fichier :[/bold] {path.name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookSaveError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Échec de sauvegarde\n\n"
+                f"[bold]Chemin :[/bold] {e.path}\n"
+                f"[bold]Raison :[/bold] {e.message}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@workbook_app.command("list")
+def workbook_list():
+    """List all open workbooks.
+
+    Displays information about all workbooks currently open
+    in the Excel instance.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            wb_mgr = WorkbookManager(excel_mgr)
+            workbooks = wb_mgr.list()
+
+            if not workbooks:
+                console.print(
+                    Panel.fit(
+                        "[yellow]ℹ[/yellow] Aucun classeur ouvert",
+                        title="Classeurs",
+                        border_style="yellow",
+                    )
+                )
+                return
+
+            table = Table(title=f"Classeurs ouverts ({len(workbooks)} trouvé(s))")
+            table.add_column("Nom", style="cyan")
+            table.add_column("Feuilles", justify="right", style="yellow")
+            table.add_column("Mode", style="magenta")
+            table.add_column("État", style="green")
+
+            for info in workbooks:
+                mode = "R/O" if info.read_only else "R/W"
+                mode_color = "red" if info.read_only else "green"
+
+                saved_icon = "✓" if info.saved else "✗"
+                saved_color = "green" if info.saved else "yellow"
+
+                table.add_row(
+                    info.name,
+                    str(info.sheets_count),
+                    f"[{mode_color}]{mode}[/{mode_color}]",
+                    f"[{saved_color}]{saved_icon}[/{saved_color}]",
+                )
+
+            console.print(table)
+
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
                 border_style="red",
             )
         )

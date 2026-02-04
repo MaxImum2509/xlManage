@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from typer.testing import CliRunner
@@ -24,6 +25,7 @@ from typer.testing import CliRunner
 from xlmanage.cli import app
 from xlmanage.excel_manager import InstanceInfo
 from xlmanage.exceptions import ExcelConnectionError, ExcelManageError
+from xlmanage.workbook_manager import WorkbookInfo
 
 runner = CliRunner()
 
@@ -266,9 +268,7 @@ class TestStopCommand:
         """Test stop command with --all and user cancels."""
         # Setup mock
         mock_manager = Mock()
-        instances = [
-            InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)
-        ]
+        instances = [InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)]
         mock_manager.list_running_instances.return_value = instances
         mock_manager_class.return_value = mock_manager
 
@@ -465,17 +465,261 @@ class TestCLIIntegration:
     @patch("xlmanage.cli.ExcelManager")
     def test_start_and_stop_workflow(self, mock_manager_class):
         """Test workflow: start instance then stop it."""
-        # Setup mock
         mock_manager = Mock()
         mock_info = InstanceInfo(pid=1234, visible=False, workbooks_count=0, hwnd=5678)
         mock_manager.start.return_value = mock_info
         mock_manager_class.return_value = mock_manager
 
-        # Start instance
         result1 = runner.invoke(app, ["start"])
         assert result1.exit_code == 0
 
-        # Stop instance
         result2 = runner.invoke(app, ["stop", "--force"])
         assert result2.exit_code == 0
         mock_manager.stop.assert_called_once()
+
+
+class TestWorkbookCommands:
+    """Tests for workbook CLI commands."""
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_open_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook open command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_info = WorkbookInfo(
+            name="test.xlsx",
+            full_path=test_file,
+            read_only=False,
+            saved=True,
+            sheets_count=3,
+        )
+        mock_wb_mgr.open.return_value = mock_info
+
+        result = runner.invoke(app, ["workbook", "open", str(test_file)])
+
+        assert result.exit_code == 0
+        assert "test.xlsx" in result.stdout
+        assert "lecture/écriture" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_open_read_only_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook open command with --read-only."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_info = WorkbookInfo(
+            name="test.xlsx",
+            full_path=test_file,
+            read_only=True,
+            saved=True,
+            sheets_count=3,
+        )
+        mock_wb_mgr.open.return_value = mock_info
+
+        result = runner.invoke(app, ["workbook", "open", str(test_file), "--read-only"])
+
+        assert result.exit_code == 0
+        assert "lecture seule" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_open_not_found(self, mock_wb_class, mock_mgr_class):
+        """Test workbook open command with file not found."""
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/missing.xlsx")
+        mock_wb_mgr.open.side_effect = WorkbookNotFoundError(test_file, "Not found")
+
+        result = runner.invoke(app, ["workbook", "open", str(test_file)])
+
+        assert result.exit_code == 1
+        assert "Fichier introuvable" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_create_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook create command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/new.xlsx")
+        mock_info = WorkbookInfo(
+            name="new.xlsx",
+            full_path=test_file,
+            read_only=False,
+            saved=True,
+            sheets_count=1,
+        )
+        mock_wb_mgr.create.return_value = mock_info
+
+        result = runner.invoke(app, ["workbook", "create", str(test_file)])
+
+        assert result.exit_code == 0
+        assert "new.xlsx" in result.stdout
+        assert "Vierge" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_create_with_template(self, mock_wb_class, mock_mgr_class):
+        """Test workbook create command with template."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/from_template.xlsx")
+        template = Path("/tmp/template.xltx")
+        mock_info = WorkbookInfo(
+            name="from_template.xlsx",
+            full_path=test_file,
+            read_only=False,
+            saved=True,
+            sheets_count=3,
+        )
+        mock_wb_mgr.create.return_value = mock_info
+
+        result = runner.invoke(
+            app, ["workbook", "create", str(test_file), "--template", str(template)]
+        )
+
+        assert result.exit_code == 0
+        assert "Basé sur" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_close_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook close command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        result = runner.invoke(app, ["workbook", "close", str(test_file)])
+
+        assert result.exit_code == 0
+        mock_wb_mgr.close.assert_called_once_with(test_file, save=True, force=False)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_close_no_save(self, mock_wb_class, mock_mgr_class):
+        """Test workbook close command with --no-save."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        result = runner.invoke(app, ["workbook", "close", str(test_file), "--no-save"])
+
+        assert result.exit_code == 0
+        mock_wb_mgr.close.assert_called_once_with(test_file, save=False, force=False)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_save_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook save command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        result = runner.invoke(app, ["workbook", "save", str(test_file)])
+
+        assert result.exit_code == 0
+        mock_wb_mgr.save.assert_called_once_with(test_file, output=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_save_as_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook save command with --as (SaveAs)."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        output = Path("/tmp/save_as.xlsx")
+        result = runner.invoke(
+            app, ["workbook", "save", str(test_file), "--as", str(output)]
+        )
+
+        assert result.exit_code == 0
+        mock_wb_mgr.save.assert_called_once_with(test_file, output=output)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_list_command_empty(self, mock_wb_class, mock_mgr_class):
+        """Test workbook list command with no workbooks."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        mock_wb_mgr.list.return_value = []
+
+        result = runner.invoke(app, ["workbook", "list"])
+
+        assert result.exit_code == 0
+        assert "Aucun classeur ouvert" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_list_command(self, mock_wb_class, mock_mgr_class):
+        """Test workbook list command with workbooks."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        mock_wb_mgr.list.return_value = [
+            WorkbookInfo(
+                name="file1.xlsx",
+                full_path=Path("/tmp/file1.xlsx"),
+                read_only=False,
+                saved=True,
+                sheets_count=2,
+            ),
+            WorkbookInfo(
+                name="file2.xlsx",
+                full_path=Path("/tmp/file2.xlsx"),
+                read_only=True,
+                saved=False,
+                sheets_count=5,
+            ),
+        ]
+
+        result = runner.invoke(app, ["workbook", "list"])
+
+        assert result.exit_code == 0
+        assert "file1.xlsx" in result.stdout
+        assert "file2.xlsx" in result.stdout
+        assert "Classeurs ouverts" in result.stdout

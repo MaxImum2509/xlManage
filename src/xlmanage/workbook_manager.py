@@ -459,7 +459,6 @@ class WorkbookManager:
             # Re-raise our exceptions
             raise
         except Exception as e:
-            # Wrap COM errors
             target = output if output is not None else path
             if hasattr(e, "hresult"):
                 raise WorkbookSaveError(
@@ -472,3 +471,40 @@ class WorkbookManager:
                     target,
                     message=f"Failed to save workbook: {str(e)}",
                 ) from e
+
+    def list(self) -> list[WorkbookInfo]:
+        """List all open workbooks.
+
+        Returns information about all workbooks currently open
+        in the Excel instance.
+
+        Returns:
+            List of WorkbookInfo for each open workbook.
+            Returns empty list if no workbooks are open.
+
+        Raises:
+            ExcelConnectionError: If COM connection fails
+
+        Example:
+            >>> manager = WorkbookManager(excel_mgr)
+            >>> workbooks = manager.list()
+            >>> for wb in workbooks:
+            ...     print(f"{wb.name}: {wb.sheets_count} sheets")
+        """
+        app = self._mgr.app
+        workbooks = []
+
+        for wb in app.Workbooks:
+            try:
+                info = WorkbookInfo(
+                    name=wb.Name,
+                    full_path=Path(wb.FullName),
+                    read_only=wb.ReadOnly,
+                    saved=wb.Saved,
+                    sheets_count=wb.Worksheets.Count,
+                )
+                workbooks.append(info)
+            except Exception:
+                continue
+
+        return workbooks
