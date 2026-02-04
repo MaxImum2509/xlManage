@@ -26,6 +26,12 @@ try:
 except ImportError:
     CDispatch = Any
 
+from .excel_manager import ExcelManager
+from .exceptions import (
+    ExcelConnectionError,
+    WorkbookAlreadyOpenError,
+    WorkbookNotFoundError,
+)
 
 # Excel file format constants
 # See: https://learn.microsoft.com/en-us/office/vba/api/excel.xlfileformat
@@ -133,3 +139,94 @@ def _find_open_workbook(app: CDispatch, path: Path) -> CDispatch | None:
             continue
 
     return None
+
+
+class WorkbookManager:
+    """Manager for Excel workbook CRUD operations.
+
+    This class provides methods to open, create, close, save, and list
+    Excel workbooks. It depends on ExcelManager for COM access.
+
+    Note:
+        The ExcelManager instance must be started before using this manager.
+    """
+
+    def __init__(self, excel_manager: ExcelManager):
+        """Initialize workbook manager.
+
+        Args:
+            excel_manager: An ExcelManager instance (must be started)
+
+        Example:
+            >>> with ExcelManager() as excel_mgr:
+            ...     wb_mgr = WorkbookManager(excel_mgr)
+            ...     info = wb_mgr.open(Path("data.xlsx"))
+        """
+        self._mgr = excel_manager
+
+    def open(self, path: Path, read_only: bool = False) -> WorkbookInfo:
+        """Open an existing workbook.
+
+        Opens a workbook file and returns information about it.
+        If the workbook is already open, raises an error.
+
+        Args:
+            path: Path to the Excel file to open
+            read_only: If True, open in read-only mode (default: False)
+
+        Returns:
+            WorkbookInfo with details about the opened workbook
+
+        Raises:
+            WorkbookNotFoundError: If the file doesn't exist on disk
+            WorkbookAlreadyOpenError: If the workbook is already open
+            ExcelConnectionError: If COM connection fails
+
+        Example:
+            >>> manager = WorkbookManager(excel_mgr)
+            >>> info = manager.open(Path("C:/data/sales.xlsx"), read_only=True)
+            >>> print(f"Opened {info.name} with {info.sheets_count} sheets")
+        """
+        # Step 1: Verify file exists
+        if not path.exists():
+            raise WorkbookNotFoundError(path, f"File not found: {path}")
+
+        # Step 2: Check if already open
+        app = self._mgr.app  # Will raise if Excel not started
+        existing_wb = _find_open_workbook(app, path)
+        if existing_wb is not None:
+            raise WorkbookAlreadyOpenError(
+                path,
+                existing_wb.Name,
+                f"Workbook is already open: {existing_wb.Name}",
+            )
+
+        # Step 3: Open the workbook
+        try:
+            # Convert Path to string and resolve to absolute path
+            abs_path = str(path.resolve())
+
+            # Open via COM
+            wb = app.Workbooks.Open(abs_path, ReadOnly=read_only)
+
+            # Step 4: Build WorkbookInfo
+            info = WorkbookInfo(
+                name=wb.Name,
+                full_path=Path(wb.FullName),
+                read_only=wb.ReadOnly,
+                saved=wb.Saved,
+                sheets_count=wb.Worksheets.Count,
+            )
+
+            return info
+
+        except Exception as e:
+            # Wrap COM errors
+            if hasattr(e, "hresult"):
+                raise ExcelConnectionError(
+                    getattr(e, "hresult"),
+                    f"Failed to open workbook: {str(e)}",
+                ) from e
+            else:
+                # Re-raise non-COM exceptions
+                raise

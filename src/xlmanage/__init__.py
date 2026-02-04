@@ -7,8 +7,11 @@ __all__ = [
     "cli",
     "excel_manager",
     "exceptions",
+    "workbook_manager",
     "ExcelManager",
     "InstanceInfo",
+    "WorkbookManager",
+    "WorkbookInfo",
     "ExcelConnectionError",
     "ExcelInstanceNotFoundError",
     "ExcelManageError",
@@ -30,3 +33,4 @@ from .exceptions import (
     WorkbookNotFoundError,
     WorkbookSaveError,
 )
+from .workbook_manager import WorkbookInfo, WorkbookManager

@@ -291,3 +291,200 @@ class TestFindOpenWorkbook:
 
         # Should resolve and find it
         assert result == mock_wb
+
+
+class TestWorkbookManager:
+    """Tests for WorkbookManager class."""
+
+    def test_workbook_manager_initialization(self):
+        """Test WorkbookManager initialization."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.excel_manager import ExcelManager
+
+        mock_mgr = Mock(spec=ExcelManager)
+        wb_mgr = WorkbookManager(mock_mgr)
+
+        assert wb_mgr._mgr == mock_mgr
+
+
+class TestWorkbookManagerOpen:
+    """Tests for WorkbookManager.open() method."""
+
+    def test_open_success(self, tmp_path):
+        """Test successfully opening a workbook."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.excel_manager import ExcelManager
+
+        # Create a temporary file (to pass exists() check)
+        test_file = tmp_path / "test.xlsx"
+        test_file.touch()
+
+        # Setup mocks
+        mock_excel_mgr = Mock(spec=ExcelManager)
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock Workbooks collection
+        mock_workbooks = Mock()
+        mock_app.Workbooks = mock_workbooks
+
+        # No existing workbooks - make it iterable
+        mock_workbooks.__iter__ = Mock(return_value=iter([]))
+
+        # Mock the opened workbook
+        mock_wb = Mock()
+        mock_wb.Name = "test.xlsx"
+        mock_wb.FullName = str(test_file)
+        mock_wb.ReadOnly = False
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 3
+        mock_workbooks.Open.return_value = mock_wb
+
+        # Test
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        info = wb_mgr.open(test_file)
+
+        # Verify
+        assert info.name == "test.xlsx"
+        assert info.full_path == test_file
+        assert info.read_only is False
+        assert info.saved is True
+        assert info.sheets_count == 3
+
+        # Verify COM call
+        mock_workbooks.Open.assert_called_once()
+        call_args = mock_workbooks.Open.call_args
+        # Check that the first argument is the file path
+        assert call_args.args[0] == str(test_file)
+
+    def test_open_read_only(self, tmp_path):
+        """Test opening workbook in read-only mode."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.excel_manager import ExcelManager
+
+        test_file = tmp_path / "readonly.xlsx"
+        test_file.touch()
+
+        mock_excel_mgr = Mock(spec=ExcelManager)
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock Workbooks collection
+        mock_workbooks = Mock()
+        mock_app.Workbooks = mock_workbooks
+        mock_workbooks.__iter__ = Mock(return_value=iter([]))
+
+        mock_wb = Mock()
+        mock_wb.Name = "readonly.xlsx"
+        mock_wb.FullName = str(test_file)
+        mock_wb.ReadOnly = True  # Excel confirmed read-only
+        mock_wb.Saved = True
+        mock_wb.Worksheets.Count = 1
+        mock_workbooks.Open.return_value = mock_wb
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+        info = wb_mgr.open(test_file, read_only=True)
+
+        assert info.read_only is True
+
+        # Verify ReadOnly parameter was passed
+        call_args = mock_workbooks.Open.call_args
+        assert call_args.kwargs.get("ReadOnly") is True
+
+    def test_open_file_not_found(self):
+        """Test opening non-existent file."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_excel_mgr = Mock()
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        missing_file = Path("C:/nonexistent/missing.xlsx")
+
+        with pytest.raises(WorkbookNotFoundError) as exc_info:
+            wb_mgr.open(missing_file)
+
+        assert exc_info.value.path == missing_file
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_open_already_open(self, tmp_path):
+        """Test opening a workbook that's already open."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import WorkbookAlreadyOpenError
+
+        test_file = tmp_path / "already_open.xlsx"
+        test_file.touch()
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock already open workbook
+        mock_existing_wb = Mock()
+        mock_existing_wb.FullName = str(test_file)
+        mock_existing_wb.Name = "already_open.xlsx"
+        mock_app.Workbooks = [mock_existing_wb]
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(WorkbookAlreadyOpenError) as exc_info:
+            wb_mgr.open(test_file)
+
+        assert exc_info.value.path == test_file
+        assert exc_info.value.name == "already_open.xlsx"
+        assert "already open" in str(exc_info.value).lower()
+
+    def test_open_com_error(self, tmp_path):
+        """Test handling COM error during open."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import ExcelConnectionError
+
+        test_file = tmp_path / "error.xlsx"
+        test_file.touch()
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock Workbooks collection
+        mock_workbooks = Mock()
+        mock_app.Workbooks = mock_workbooks
+        mock_workbooks.__iter__ = Mock(return_value=iter([]))
+
+        # Mock COM error
+        com_error = Exception("File is corrupted")
+        com_error.hresult = 0x800A03EC
+        mock_workbooks.Open.side_effect = com_error
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(ExcelConnectionError) as exc_info:
+            wb_mgr.open(test_file)
+
+        assert exc_info.value.hresult == 0x800A03EC
+        assert "Failed to open workbook" in str(exc_info.value)
+
+    def test_open_excel_not_started(self, tmp_path):
+        """Test opening when Excel is not started."""
+        from xlmanage.workbook_manager import WorkbookManager
+        from xlmanage.exceptions import ExcelConnectionError
+
+        # Create the file first to pass the exists() check
+        test_file = tmp_path / "any.xlsx"
+        test_file.touch()
+
+        # Create a mock ExcelManager where the app property raises an exception
+        class MockExcelManager:
+            def __init__(self):
+                pass
+
+            @property
+            def app(self):
+                raise ExcelConnectionError(0x80080005, "Excel application not started")
+
+        mock_excel_mgr = MockExcelManager()
+
+        wb_mgr = WorkbookManager(mock_excel_mgr)
+
+        with pytest.raises(ExcelConnectionError):
+            wb_mgr.open(test_file)
