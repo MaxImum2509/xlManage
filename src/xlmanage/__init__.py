@@ -13,6 +13,9 @@ __all__ = [
     "ExcelInstanceNotFoundError",
     "ExcelManageError",
     "ExcelRPCError",
+    "WorkbookNotFoundError",
+    "WorkbookAlreadyOpenError",
+    "WorkbookSaveError",
 ]
 
 # Import exceptions for easy access
@@ -23,4 +26,7 @@ from .exceptions import (
     ExcelInstanceNotFoundError,
     ExcelManageError,
     ExcelRPCError,
+    WorkbookAlreadyOpenError,
+    WorkbookNotFoundError,
+    WorkbookSaveError,
 )

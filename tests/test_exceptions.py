@@ -18,11 +18,15 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import pytest
+from pathlib import Path
 from xlmanage.exceptions import (
     ExcelManageError,
     ExcelConnectionError,
     ExcelInstanceNotFoundError,
     ExcelRPCError,
+    WorkbookNotFoundError,
+    WorkbookAlreadyOpenError,
+    WorkbookSaveError,
 )
 
 
@@ -336,3 +340,98 @@ class TestExceptionInstantiation:
         assert error2.hresult == 0x80010108
         assert error2.message == "Custom RPC message"
         assert "Custom RPC message" in str(error2)
+
+
+class TestWorkbookNotFoundError:
+    """Tests for WorkbookNotFoundError."""
+
+    def test_workbook_not_found_default_message(self):
+        """Test WorkbookNotFoundError with default message."""
+        path = Path("C:/test/missing.xlsx")
+        error = WorkbookNotFoundError(path)
+
+        assert error.path == path
+        assert error.message == "Workbook not found"
+        assert "Workbook not found" in str(error)
+        assert "missing.xlsx" in str(error)
+
+    def test_workbook_not_found_custom_message(self):
+        """Test WorkbookNotFoundError with custom message."""
+        path = Path("D:/data/file.xlsm")
+        error = WorkbookNotFoundError(path, "File does not exist")
+
+        assert error.path == path
+        assert error.message == "File does not exist"
+        assert "File does not exist" in str(error)
+
+    def test_workbook_not_found_inheritance(self):
+        """Test WorkbookNotFoundError inherits from ExcelManageError."""
+        error = WorkbookNotFoundError(Path("test.xlsx"))
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestWorkbookAlreadyOpenError:
+    """Tests for WorkbookAlreadyOpenError."""
+
+    def test_workbook_already_open_default_message(self):
+        """Test WorkbookAlreadyOpenError with default message."""
+        path = Path("C:/test/open.xlsx")
+        name = "open.xlsx"
+        error = WorkbookAlreadyOpenError(path, name)
+
+        assert error.path == path
+        assert error.name == name
+        assert error.message == "Workbook already open"
+        assert name in str(error)
+
+    def test_workbook_already_open_custom_message(self):
+        """Test WorkbookAlreadyOpenError with custom message."""
+        path = Path("D:/data/file.xlsm")
+        name = "file.xlsm"
+        error = WorkbookAlreadyOpenError(path, name, "Already loaded")
+
+        assert error.message == "Already loaded"
+        assert "Already loaded" in str(error)
+
+    def test_workbook_already_open_inheritance(self):
+        """Test WorkbookAlreadyOpenError inherits from ExcelManageError."""
+        error = WorkbookAlreadyOpenError(Path("test.xlsx"), "test.xlsx")
+        assert isinstance(error, ExcelManageError)
+
+
+class TestWorkbookSaveError:
+    """Tests for WorkbookSaveError."""
+
+    def test_workbook_save_error_without_hresult(self):
+        """Test WorkbookSaveError without COM error."""
+        path = Path("C:/test/readonly.xlsx")
+        error = WorkbookSaveError(path)
+
+        assert error.path == path
+        assert error.hresult == 0
+        assert error.message == "Save failed"
+        assert "readonly.xlsx" in str(error)
+        assert "HRESULT" not in str(error)  # No HRESULT when 0
+
+    def test_workbook_save_error_with_hresult(self):
+        """Test WorkbookSaveError with COM error."""
+        path = Path("D:/test/file.xlsx")
+        error = WorkbookSaveError(path, hresult=0x80070005)
+
+        assert error.hresult == 0x80070005
+        assert "0x80070005" in str(error)
+        assert "HRESULT" in str(error)
+
+    def test_workbook_save_error_custom_message(self):
+        """Test WorkbookSaveError with custom message."""
+        path = Path("E:/data/protected.xlsx")
+        error = WorkbookSaveError(path, message="Access denied")
+
+        assert error.message == "Access denied"
+        assert "Access denied" in str(error)
+
+    def test_workbook_save_error_inheritance(self):
+        """Test WorkbookSaveError inherits from ExcelManageError."""
+        error = WorkbookSaveError(Path("test.xlsx"))
+        assert isinstance(error, ExcelManageError)
