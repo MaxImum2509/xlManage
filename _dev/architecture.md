@@ -72,10 +72,10 @@ xlManage est une application CLI Windows en Python qui permet de piloter Microso
 L'architecture suit un modele en 3 couches :
 
 ```
-+------------------------------------------------------------------+
-|                        COUCHE CLI (cli.py)                        |
-|  Typer commands -> validation args -> appel managers -> Rich output|
-+------------------------------------------------------------------+
++---------------------------------------------------------------------+
+|                        COUCHE CLI (cli.py)                          |
+|  Typer commands -> validation args -> appel managers -> Rich output |
++---------------------------------------------------------------------+
         |               |               |               |
         v               v               v               v
 +-------------+ +---------------+ +----------------+ +-------------+
@@ -88,14 +88,14 @@ L'architecture suit un modele en 3 couches :
         |       | (Epic 9)      | |(Epic 12)   |        |
         |       +---------------+ +------------+        |
         |               |               |               |
-+------------------------------------------------------------------+
++-------------------------------------------------------------------+
 |                  COUCHE OPTIMISATION (existante)                  |
 |  ExcelOptimizer | ScreenOptimizer | CalculationOptimizer          |
-+------------------------------------------------------------------+
++-------------------------------------------------------------------+
         |
         v
 +------------------------------------------------------------------+
-|                    COUCHE COM (pywin32)                           |
+|                    COUCHE COM (pywin32)                          |
 |  win32com.client.Dispatch / DispatchEx / gencache.EnsureDispatch |
 |  pywintypes.com_error | pythoncom (ROT, CoInitialize)            |
 +------------------------------------------------------------------+
