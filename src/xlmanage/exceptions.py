@@ -140,3 +140,77 @@ class WorkbookSaveError(ExcelManageError):
             super().__init__(f"{message}: {path} (HRESULT: {hresult:#010x})")
         else:
             super().__init__(f"{message}: {path}")
+
+
+class WorksheetNotFoundError(ExcelManageError):
+    """Feuille introuvable dans le classeur.
+
+    Raised when attempting to access a worksheet that doesn't exist.
+    """
+
+    def __init__(self, name: str, workbook_name: str):
+        """Initialize worksheet not found error.
+
+        Args:
+            name: Name of the worksheet that was not found
+            workbook_name: Name of the workbook that was searched
+        """
+        self.name = name
+        self.workbook_name = workbook_name
+        super().__init__(f"Worksheet '{name}' not found in workbook '{workbook_name}'")
+
+
+class WorksheetAlreadyExistsError(ExcelManageError):
+    """Nom de feuille déjà utilisé.
+
+    Raised when attempting to create a worksheet with a name that already exists.
+    """
+
+    def __init__(self, name: str, workbook_name: str):
+        """Initialize worksheet already exists error.
+
+        Args:
+            name: Name of the worksheet that already exists
+            workbook_name: Name of the workbook
+        """
+        self.name = name
+        self.workbook_name = workbook_name
+        super().__init__(
+            f"Worksheet '{name}' already exists in workbook '{workbook_name}'"
+        )
+
+
+class WorksheetDeleteError(ExcelManageError):
+    """Suppression de feuille impossible.
+
+    Raised when a worksheet cannot be deleted (e.g., last visible sheet).
+    """
+
+    def __init__(self, name: str, reason: str):
+        """Initialize worksheet delete error.
+
+        Args:
+            name: Name of the worksheet that cannot be deleted
+            reason: Explanation of why deletion failed
+        """
+        self.name = name
+        self.reason = reason
+        super().__init__(f"Cannot delete worksheet '{name}': {reason}")
+
+
+class WorksheetNameError(ExcelManageError):
+    """Nom de feuille invalide.
+
+    Raised when a worksheet name violates Excel naming rules.
+    """
+
+    def __init__(self, name: str, reason: str):
+        """Initialize worksheet name error.
+
+        Args:
+            name: The invalid worksheet name
+            reason: Explanation of why name is invalid
+        """
+        self.name = name
+        self.reason = reason
+        super().__init__(f"Invalid worksheet name '{name}': {reason}")

@@ -1,5 +1,5 @@
 """
-Test exceptions for xlmanage COM error handling.
+Tests for xlmanage exception classes.
 
 This file is part of xlManage.
 
@@ -19,14 +19,19 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 
 import pytest
 from pathlib import Path
+
 from xlmanage.exceptions import (
-    ExcelManageError,
     ExcelConnectionError,
     ExcelInstanceNotFoundError,
+    ExcelManageError,
     ExcelRPCError,
-    WorkbookNotFoundError,
     WorkbookAlreadyOpenError,
+    WorkbookNotFoundError,
     WorkbookSaveError,
+    WorksheetAlreadyExistsError,
+    WorksheetDeleteError,
+    WorksheetNameError,
+    WorksheetNotFoundError,
 )
 
 
@@ -435,3 +440,129 @@ class TestWorkbookSaveError:
         """Test WorkbookSaveError inherits from ExcelManageError."""
         error = WorkbookSaveError(Path("test.xlsx"))
         assert isinstance(error, ExcelManageError)
+
+
+class TestWorksheetNotFoundError:
+    """Tests for WorksheetNotFoundError."""
+
+    def test_worksheet_not_found_default_message(self):
+        """Test WorksheetNotFoundError with default message."""
+        error = WorksheetNotFoundError("Sheet1", "workbook.xlsx")
+
+        assert error.name == "Sheet1"
+        assert error.workbook_name == "workbook.xlsx"
+        assert "not found" in str(error).lower()
+        assert "Sheet1" in str(error)
+        assert "workbook.xlsx" in str(error)
+
+    def test_worksheet_not_found_custom_workbook_name(self):
+        """Test WorksheetNotFoundError with different workbook name."""
+        error = WorksheetNotFoundError("Data", "reports.xlsx")
+
+        assert error.name == "Data"
+        assert error.workbook_name == "reports.xlsx"
+        assert "not found" in str(error).lower()
+
+    def test_worksheet_not_found_empty_sheet_name(self):
+        """Test WorksheetNotFoundError with empty sheet name."""
+        error = WorksheetNotFoundError("", "test.xlsx")
+
+        assert error.name == ""
+        assert error.workbook_name == "test.xlsx"
+        assert "Worksheet ''" in str(error)
+
+    def test_worksheet_not_found_inheritance(self):
+        """Test WorksheetNotFoundError inherits from ExcelManageError."""
+        error = WorksheetNotFoundError("Sheet1", "workbook.xlsx")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestWorksheetAlreadyExistsError:
+    """Tests for WorksheetAlreadyExistsError."""
+
+    def test_worksheet_already_exists_default_message(self):
+        """Test WorksheetAlreadyExistsError with default message."""
+        error = WorksheetAlreadyExistsError("Summary", "report.xlsx")
+
+        assert error.name == "Summary"
+        assert error.workbook_name == "report.xlsx"
+        assert "already exists" in str(error).lower()
+        assert "Summary" in str(error)
+        assert "report.xlsx" in str(error)
+
+    def test_worksheet_already_exists_with_spaces(self):
+        """Test WorksheetAlreadyExistsError with sheet name containing spaces."""
+        error = WorksheetAlreadyExistsError("My Data", "workbook.xlsx")
+
+        assert error.name == "My Data"
+        assert error.workbook_name == "workbook.xlsx"
+        assert "already exists" in str(error).lower()
+
+    def test_worksheet_already_exists_inheritance(self):
+        """Test WorksheetAlreadyExistsError inherits from ExcelManageError."""
+        error = WorksheetAlreadyExistsError("Sheet1", "workbook.xlsx")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestWorksheetDeleteError:
+    """Tests for WorksheetDeleteError."""
+
+    def test_worksheet_delete_error_default_reason(self):
+        """Test WorksheetDeleteError with default reason."""
+        error = WorksheetDeleteError("Sheet1", "Cannot delete")
+
+        assert error.name == "Sheet1"
+        assert error.reason == "Cannot delete"
+        assert "Cannot delete" in str(error)
+        assert "Sheet1" in str(error)
+
+    def test_worksheet_delete_last_visible_sheet(self):
+        """Test WorksheetDeleteError for last visible sheet."""
+        error = WorksheetDeleteError("LastSheet", "last visible sheet")
+
+        assert error.name == "LastSheet"
+        assert error.reason == "last visible sheet"
+        assert "last visible sheet" in str(error)
+
+    def test_worksheet_delete_error_inheritance(self):
+        """Test WorksheetDeleteError inherits from ExcelManageError."""
+        error = WorksheetDeleteError("Sheet1", "protected")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestWorksheetNameError:
+    """Tests for WorksheetNameError."""
+
+    def test_worksheet_name_error_default_reason(self):
+        """Test WorksheetNameError with default reason."""
+        error = WorksheetNameError("Sheet?", "invalid character")
+
+        assert error.name == "Sheet?"
+        assert error.reason == "invalid character"
+        assert "Invalid worksheet name" in str(error)
+        assert "Sheet?" in str(error)
+
+    def test_worksheet_name_error_too_long(self):
+        """Test WorksheetNameError for name too long."""
+        error = WorksheetNameError("A" * 32, "name exceeds 31 characters")
+
+        assert error.name == "A" * 32
+        assert error.reason == "name exceeds 31 characters"
+        assert "31 characters" in str(error)
+
+    def test_worksheet_name_error_invalid_character(self):
+        """Test WorksheetNameError for invalid character."""
+        error = WorksheetNameError("Data/Sheet", "contains invalid character '/'")
+
+        assert error.name == "Data/Sheet"
+        assert error.reason == "contains invalid character '/'"
+        assert "Invalid worksheet name" in str(error)
+
+    def test_worksheet_name_error_inheritance(self):
+        """Test WorksheetNameError inherits from ExcelManageError."""
+        error = WorksheetNameError("Sheet!", "invalid character")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)

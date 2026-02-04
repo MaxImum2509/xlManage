@@ -19,6 +19,10 @@ __all__ = [
     "WorkbookNotFoundError",
     "WorkbookAlreadyOpenError",
     "WorkbookSaveError",
+    "WorksheetNotFoundError",
+    "WorksheetAlreadyExistsError",
+    "WorksheetDeleteError",
+    "WorksheetNameError",
 ]
 
 # Import exceptions for easy access
@@ -32,5 +36,9 @@ from .exceptions import (
     WorkbookAlreadyOpenError,
     WorkbookNotFoundError,
     WorkbookSaveError,
+    WorksheetAlreadyExistsError,
+    WorksheetDeleteError,
+    WorksheetNameError,
+    WorksheetNotFoundError,
 )
 from .workbook_manager import WorkbookInfo, WorkbookManager
