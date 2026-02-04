@@ -105,9 +105,10 @@
 - **Documentations** : Créés dans `docs/`
 - **Scripts utilitaires** : Enregistrés dans `scripts/`
 - **Développement** : Documentation et rapports dans `_dev/`
-  - `_dev/architecture.md` : Documentation d'architecture globale
-  - `_dev/stories/` : Stories des epics et des fonctionnalités
-  - `_dev/reports/` : Rapports d'analyse, review, tests, etc.
+    - `_dev/architecture.md` : Documentation d'architecture globale
+    - `_dev/stories/` : Stories des epics et des fonctionnalités
+    - `_dev/reports/` : Rapports d'analyse, review, tests, etc.
+    - `_dev/planning` : pour les plans d’actions ponctuels
 
 ## Langues de Communication
 
