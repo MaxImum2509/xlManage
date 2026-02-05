@@ -24,6 +24,8 @@ try:
     from xlmanage.worksheet_manager import (
         WorksheetInfo,
         _validate_sheet_name,
+        _resolve_workbook,
+        _find_worksheet,
         SHEET_NAME_MAX_LENGTH,
         SHEET_NAME_FORBIDDEN_CHARS,
     )
@@ -31,11 +33,20 @@ except ImportError:
     from xlmanage.worksheet_manager import (
         WorksheetInfo,
         _validate_sheet_name,
+        _resolve_workbook,
+        _find_worksheet,
         SHEET_NAME_MAX_LENGTH,
         SHEET_NAME_FORBIDDEN_CHARS,
     )
 
-from xlmanage.exceptions import WorksheetNameError, ExcelManageError
+from xlmanage.exceptions import (
+    WorksheetNameError,
+    ExcelManageError,
+    WorkbookNotFoundError,
+    ExcelConnectionError,
+)
+from pathlib import Path
+from unittest.mock import Mock, MagicMock, patch
 
 
 class TestWorksheetInfo:
@@ -278,3 +289,286 @@ class TestValidationConstants:
         forbidden = r"\\/\*\?:\[\]"
         for char in ["\\", "/", "*", "?", ":", "[", "]"]:
             assert char in forbidden
+
+
+class TestResolveWorkbook:
+    """Tests for _resolve_workbook function."""
+
+    def test_resolve_workbook_with_none_returns_active(self):
+        """Test resolving with None returns active workbook."""
+        # Mock Excel app with active workbook
+        mock_app = Mock()
+        mock_wb = Mock()
+        mock_wb.Name = "Active.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        result = _resolve_workbook(mock_app, None)
+
+        assert result == mock_wb
+        assert mock_app.ActiveWorkbook == mock_wb
+
+    def test_resolve_workbook_with_none_no_active_raises(self):
+        """Test resolving with None when no active workbook raises error."""
+        # Mock Excel app with no active workbook
+        mock_app = Mock()
+        mock_app.ActiveWorkbook = None
+
+        with pytest.raises(ExcelConnectionError) as exc_info:
+            _resolve_workbook(mock_app, None)
+
+        assert "No active workbook" in str(exc_info.value)
+        assert exc_info.value.hresult == 0x80080005
+
+    def test_resolve_workbook_with_none_com_error_raises(self):
+        """Test resolving with None when COM error occurs."""
+
+        # Mock Excel app that raises COM error
+        class COMError(Exception):
+            def __init__(self):
+                self.hresult = 0x800401E4
+
+        mock_app = Mock()
+        # Configure the property to raise exception when accessed
+        type(mock_app).ActiveWorkbook = property(lambda self: (_ for _ in ()).throw(COMError()))
+
+        with pytest.raises(ExcelConnectionError) as exc_info:
+            _resolve_workbook(mock_app, None)
+
+        assert exc_info.value.hresult == 0x800401E4
+
+    def test_resolve_workbook_with_path_finds_open(self):
+        """Test resolving with path finds open workbook."""
+        # Mock Excel app with open workbook
+        mock_app = Mock()
+        mock_wb = Mock()
+        mock_wb.Name = "test.xlsx"
+
+        # Patch _find_open_workbook in workbook_manager module
+        with patch("xlmanage.workbook_manager._find_open_workbook") as mock_find:
+            mock_find.return_value = mock_wb
+
+            result = _resolve_workbook(mock_app, Path("C:/data/test.xlsx"))
+
+            assert result == mock_wb
+            mock_find.assert_called_once_with(mock_app, Path("C:/data/test.xlsx"))
+
+    def test_resolve_workbook_with_path_not_open_raises(self):
+        """Test resolving with path when workbook not open raises error."""
+        # Mock Excel app
+        mock_app = Mock()
+
+        # Patch _find_open_workbook to return None
+        with patch("xlmanage.workbook_manager._find_open_workbook") as mock_find:
+            mock_find.return_value = None
+
+            with pytest.raises(WorkbookNotFoundError) as exc_info:
+                _resolve_workbook(mock_app, Path("C:/data/missing.xlsx"))
+
+            assert "is not open" in str(exc_info.value)
+            assert exc_info.value.path == Path("C:/data/missing.xlsx")
+
+    def test_resolve_workbook_preserves_workbook_object(self):
+        """Test that resolved workbook object is returned unchanged."""
+        mock_app = Mock()
+        mock_wb = Mock()
+        mock_wb.Name = "test.xlsx"
+        mock_wb.FullName = "C:/data/test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        result = _resolve_workbook(mock_app, None)
+
+        assert result is mock_wb
+        assert result.Name == "test.xlsx"
+        assert result.FullName == "C:/data/test.xlsx"
+
+    def test_resolve_workbook_with_none_non_com_error_raises(self):
+        """Test resolving with None when non-COM error occurs."""
+        # Mock Excel app that raises exception without hresult
+        mock_app = Mock()
+        type(mock_app).ActiveWorkbook = property(
+            lambda self: (_ for _ in ()).throw(RuntimeError("Some error"))
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_workbook(mock_app, None)
+
+        assert "Some error" in str(exc_info.value)
+
+
+class TestFindWorksheet:
+    """Tests for _find_worksheet function."""
+
+    def test_find_worksheet_exact_match(self):
+        """Test finding worksheet with exact name match."""
+        # Mock workbook with worksheets
+        mock_wb = Mock()
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Sheet1"
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Sheet2"
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        result = _find_worksheet(mock_wb, "Sheet1")
+
+        assert result == mock_ws1
+        assert result.Name == "Sheet1"
+
+    def test_find_worksheet_case_insensitive(self):
+        """Test finding worksheet is case-insensitive."""
+        # Mock workbook with worksheets
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "Sheet1"
+        mock_wb.Worksheets = [mock_ws]
+
+        # Test various cases
+        assert _find_worksheet(mock_wb, "SHEET1") == mock_ws
+        assert _find_worksheet(mock_wb, "sheet1") == mock_ws
+        assert _find_worksheet(mock_wb, "ShEeT1") == mock_ws
+
+    def test_find_worksheet_not_found(self):
+        """Test finding non-existent worksheet returns None."""
+        # Mock workbook with worksheets
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "Sheet1"
+        mock_wb.Worksheets = [mock_ws]
+
+        result = _find_worksheet(mock_wb, "NonExistent")
+
+        assert result is None
+
+    def test_find_worksheet_empty_workbook(self):
+        """Test finding worksheet in empty workbook returns None."""
+        # Mock workbook with no worksheets
+        mock_wb = Mock()
+        mock_wb.Worksheets = []
+
+        result = _find_worksheet(mock_wb, "Sheet1")
+
+        assert result is None
+
+    def test_find_worksheet_multiple_sheets(self):
+        """Test finding worksheet among multiple sheets."""
+        # Mock workbook with multiple worksheets
+        mock_wb = Mock()
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Data"
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Summary"
+        mock_ws3 = Mock()
+        mock_ws3.Name = "Report"
+        mock_wb.Worksheets = [mock_ws1, mock_ws2, mock_ws3]
+
+        result = _find_worksheet(mock_wb, "Summary")
+
+        assert result == mock_ws2
+        assert result.Name == "Summary"
+
+    def test_find_worksheet_handles_read_error(self):
+        """Test finding worksheet handles errors when reading names."""
+        # Mock workbook with worksheets, one that raises error
+        mock_wb = Mock()
+
+        # Create mock worksheet that raises error when accessing Name
+        mock_ws1 = Mock()
+
+        def raise_error():
+            raise Exception("Read error")
+
+        type(mock_ws1).Name = property(lambda self: raise_error())
+
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Sheet2"
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        # Should skip ws1 and find ws2
+        result = _find_worksheet(mock_wb, "Sheet2")
+
+        assert result == mock_ws2
+
+    def test_find_worksheet_all_error_returns_none(self):
+        """Test finding worksheet when all sheets error returns None."""
+        # Mock workbook with worksheets that all raise errors
+        mock_wb = Mock()
+
+        mock_ws1 = Mock()
+
+        def raise_error1():
+            raise Exception("Read error 1")
+
+        type(mock_ws1).Name = property(lambda self: raise_error1())
+
+        mock_ws2 = Mock()
+
+        def raise_error2():
+            raise Exception("Read error 2")
+
+        type(mock_ws2).Name = property(lambda self: raise_error2())
+
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        result = _find_worksheet(mock_wb, "Sheet1")
+
+        assert result is None
+
+    def test_find_worksheet_unicode_names(self):
+        """Test finding worksheet with Unicode names."""
+        # Mock workbook with Unicode worksheet names
+        mock_wb = Mock()
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Données"
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Été"
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        result1 = _find_worksheet(mock_wb, "Données")
+        assert result1 == mock_ws1
+
+        result2 = _find_worksheet(mock_wb, "été")  # Case-insensitive
+        assert result2 == mock_ws2
+
+    def test_find_worksheet_special_characters(self):
+        """Test finding worksheet with special characters in name."""
+        # Mock workbook with special character names
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "Data (2024)"
+        mock_wb.Worksheets = [mock_ws]
+
+        result = _find_worksheet(mock_wb, "Data (2024)")
+
+        assert result == mock_ws
+
+    def test_find_worksheet_returns_first_match(self):
+        """Test that finding worksheet returns first match found."""
+        # Mock workbook with worksheets
+        mock_wb = Mock()
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Sheet1"
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Sheet2"
+        mock_ws3 = Mock()
+        mock_ws3.Name = "Sheet1"  # Duplicate name (shouldn't happen in real Excel)
+        mock_wb.Worksheets = [mock_ws1, mock_ws2, mock_ws3]
+
+        result = _find_worksheet(mock_wb, "Sheet1")
+
+        # Should return first match
+        assert result == mock_ws1
+
+    def test_find_worksheet_preserves_worksheet_object(self):
+        """Test that found worksheet object is returned unchanged."""
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "TestSheet"
+        mock_ws.Index = 1
+        mock_ws.Visible = True
+        mock_wb.Worksheets = [mock_ws]
+
+        result = _find_worksheet(mock_wb, "TestSheet")
+
+        assert result is mock_ws
+        assert result.Name == "TestSheet"
+        assert result.Index == 1
+        assert result.Visible is True

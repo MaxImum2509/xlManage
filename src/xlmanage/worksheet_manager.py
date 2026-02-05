@@ -19,6 +19,13 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+try:
+    from win32com.client import CDispatch
+except ImportError:
+    CDispatch = Any
 
 try:
     from .exceptions import WorksheetNameError
@@ -85,3 +92,108 @@ def _validate_sheet_name(name: str) -> None:
         raise WorksheetNameError(
             name, f"contains forbidden character '{forbidden_char}'"
         )
+
+
+def _resolve_workbook(app: CDispatch, workbook: Path | None) -> CDispatch:
+    """Resolve the target workbook.
+
+    If workbook is provided, finds or opens that specific workbook.
+    If workbook is None, returns the active workbook.
+
+    Args:
+        app: Excel Application COM object
+        workbook: Optional path to a specific workbook.
+                  If None, uses the active workbook.
+
+    Returns:
+        Workbook COM object
+
+    Raises:
+        WorkbookNotFoundError: If the specified workbook is not open
+        ExcelConnectionError: If no active workbook when workbook=None
+
+    Examples:
+        >>> # Use active workbook
+        >>> wb = _resolve_workbook(app, None)
+
+        >>> # Use specific workbook
+        >>> wb = _resolve_workbook(app, Path("C:/data/test.xlsx"))
+
+    Note:
+        This function does NOT open the workbook if it's not already open.
+        Use WorkbookManager.open() to open a workbook first.
+        This function is shared by WorksheetManager, TableManager, and VBAManager.
+    """
+    if workbook is None:
+        # Use active workbook
+        try:
+            wb = app.ActiveWorkbook
+            if wb is None:
+                from .exceptions import ExcelConnectionError
+
+                raise ExcelConnectionError(
+                    0x80080005, "No active workbook. Open a workbook first."
+                )
+            return wb
+        except Exception as e:
+            from .exceptions import ExcelConnectionError
+
+            if hasattr(e, "hresult"):
+                raise ExcelConnectionError(
+                    getattr(e, "hresult"),
+                    f"Failed to get active workbook: {str(e)}",
+                ) from e
+            else:
+                raise
+    else:
+        # Find the specified workbook
+        from .exceptions import WorkbookNotFoundError
+        from .workbook_manager import _find_open_workbook
+
+        wb = _find_open_workbook(app, workbook)
+        if wb is None:
+            raise WorkbookNotFoundError(
+                workbook, f"Workbook is not open: {workbook.name}"
+            )
+        return wb
+
+
+def _find_worksheet(wb: CDispatch, name: str) -> CDispatch | None:
+    """Find a worksheet by name in a workbook.
+
+    Searches for a worksheet with the given name.
+    The search is case-insensitive (Excel behavior).
+
+    Args:
+        wb: Workbook COM object to search in
+        name: Name of the worksheet to find
+
+    Returns:
+        Worksheet COM object if found, None otherwise
+
+    Examples:
+        >>> ws = _find_worksheet(wb, "Sheet1")
+        >>> if ws:
+        ...     print(f"Found: {ws.Name}")
+
+        >>> # Case-insensitive
+        >>> ws = _find_worksheet(wb, "SHEET1")  # Finds "Sheet1"
+
+    Note:
+        Excel worksheet names are case-insensitive but case-preserving.
+        "Sheet1" and "SHEET1" refer to the same worksheet.
+    """
+    # Normalize search name to lowercase
+    search_name = name.lower()
+
+    # Iterate through all worksheets
+    for ws in wb.Worksheets:
+        try:
+            # Compare case-insensitive
+            if ws.Name.lower() == search_name:
+                return ws
+        except Exception:
+            # Skip worksheets that can't be read
+            continue
+
+    return None
