@@ -1246,3 +1246,392 @@ class TestWorksheetManagerDelete:
                 manager.delete("ToDelete")
 
                 mock_ws.Delete.assert_called_once()
+
+
+class TestWorksheetManagerList:
+    """Tests for WorksheetManager.list() method."""
+
+    def test_list_worksheets_success(self):
+        """Test listing worksheets successfully."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock worksheets
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Sheet1"
+        mock_ws1.Index = 1
+        mock_ws1.Visible = True
+        mock_ws1.UsedRange = None
+
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Sheet2"
+        mock_ws2.Index = 2
+        mock_ws2.Visible = False
+        mock_ws2.UsedRange = None
+
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            sheets = manager.list()
+
+            assert len(sheets) == 2
+            assert sheets[0].name == "Sheet1"
+            assert sheets[0].index == 1
+            assert sheets[0].visible is True
+            assert sheets[1].name == "Sheet2"
+            assert sheets[1].index == 2
+            assert sheets[1].visible is False
+
+    def test_list_from_specific_workbook(self):
+        """Test listing worksheets from specific workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Specific.xlsx"
+
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+        mock_ws.Index = 1
+        mock_ws.Visible = True
+        mock_ws.UsedRange = None
+
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = WorksheetManager(mock_excel_mgr)
+        workbook_path = Path("C:/data/Specific.xlsx")
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            sheets = manager.list(workbook_path)
+
+            assert len(sheets) == 1
+            assert sheets[0].name == "Data"
+            mock_resolve.assert_called_once_with(mock_app, workbook_path)
+
+    def test_list_empty_workbook(self):
+        """Test listing worksheets in empty workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with no worksheets
+        mock_wb = Mock()
+        mock_wb.Name = "Empty.xlsx"
+        mock_wb.Worksheets = []
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            sheets = manager.list()
+
+            assert sheets == []
+
+    def test_list_handles_read_error(self):
+        """Test listing handles errors when reading worksheet info."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock worksheet that works
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Sheet1"
+        mock_ws1.Index = 1
+        mock_ws1.Visible = True
+        mock_ws1.UsedRange = None
+
+        # Mock worksheet that raises error
+        mock_ws2 = Mock()
+        type(mock_ws2).Name = PropertyMock(side_effect=Exception("Read error"))
+
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            sheets = manager.list()
+
+            # Should return only the readable worksheet
+            assert len(sheets) == 1
+            assert sheets[0].name == "Sheet1"
+
+    def test_list_includes_visible_and_hidden(self):
+        """Test that list includes both visible and hidden worksheets."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with mixed visibility
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        mock_ws_visible = Mock()
+        mock_ws_visible.Name = "Visible"
+        mock_ws_visible.Index = 1
+        mock_ws_visible.Visible = True
+        mock_ws_visible.UsedRange = None
+
+        mock_ws_hidden = Mock()
+        mock_ws_hidden.Name = "Hidden"
+        mock_ws_hidden.Index = 2
+        mock_ws_hidden.Visible = False
+        mock_ws_hidden.UsedRange = None
+
+        mock_wb.Worksheets = [mock_ws_visible, mock_ws_hidden]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            sheets = manager.list()
+
+            assert len(sheets) == 2
+            visible_sheets = [s for s in sheets if s.visible]
+            hidden_sheets = [s for s in sheets if not s.visible]
+            assert len(visible_sheets) == 1
+            assert len(hidden_sheets) == 1
+
+
+class TestWorksheetManagerCopy:
+    """Tests for WorksheetManager.copy() method."""
+
+    def test_copy_worksheet_success(self):
+        """Test copying worksheet successfully."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock source worksheet
+        mock_ws_source = Mock()
+        mock_ws_source.Name = "Template"
+        mock_ws_source.Copy = Mock()
+
+        # Mock copied worksheet
+        mock_ws_copy = Mock()
+        mock_ws_copy.Name = "Copy"
+        mock_ws_copy.Index = 2
+        mock_ws_copy.Visible = True
+        mock_ws_copy.UsedRange = None
+
+        mock_wb.ActiveSheet = mock_ws_copy
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                # First call: find source (exists)
+                # Second call: check destination (doesn't exist)
+                mock_find.side_effect = [mock_ws_source, None]
+
+                info = manager.copy("Template", "Copy")
+
+                assert info.name == "Copy"
+                assert info.index == 2
+                assert info.visible is True
+                mock_ws_source.Copy.assert_called_once_with(After=mock_ws_source)
+
+    def test_copy_from_specific_workbook(self):
+        """Test copying worksheet from specific workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Specific.xlsx"
+
+        # Mock source worksheet
+        mock_ws_source = Mock()
+        mock_ws_source.Name = "Original"
+        mock_ws_source.Copy = Mock()
+
+        # Mock copied worksheet
+        mock_ws_copy = Mock()
+        mock_ws_copy.Name = "Duplicate"
+        mock_ws_copy.Index = 2
+        mock_ws_copy.Visible = True
+        mock_ws_copy.UsedRange = None
+
+        mock_wb.ActiveSheet = mock_ws_copy
+
+        manager = WorksheetManager(mock_excel_mgr)
+        workbook_path = Path("C:/data/Specific.xlsx")
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.side_effect = [mock_ws_source, None]
+
+                info = manager.copy("Original", "Duplicate", workbook_path)
+
+                assert info.name == "Duplicate"
+                mock_resolve.assert_called_once_with(mock_app, workbook_path)
+
+    def test_copy_invalid_destination_name(self):
+        """Test copying with invalid destination name."""
+        mock_excel_mgr = Mock()
+        manager = WorksheetManager(mock_excel_mgr)
+
+        # Test invalid names
+        with pytest.raises(WorksheetNameError):
+            manager.copy("Source", "")
+
+        with pytest.raises(WorksheetNameError):
+            manager.copy("Source", "Sheet/Invalid")
+
+    def test_copy_source_not_found(self):
+        """Test copying non-existent source worksheet."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = None  # Source not found
+
+                with pytest.raises(WorksheetNotFoundError) as exc_info:
+                    manager.copy("Missing", "Copy")
+
+                assert exc_info.value.name == "Missing"
+
+    def test_copy_destination_already_exists(self):
+        """Test copying when destination name already exists."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock source worksheet
+        mock_ws_source = Mock()
+        mock_ws_source.Name = "Source"
+
+        # Mock existing destination worksheet
+        mock_ws_existing = Mock()
+        mock_ws_existing.Name = "Existing"
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                # First call: source exists
+                # Second call: destination already exists
+                mock_find.side_effect = [mock_ws_source, mock_ws_existing]
+
+                with pytest.raises(WorksheetAlreadyExistsError) as exc_info:
+                    manager.copy("Source", "Existing")
+
+                assert exc_info.value.name == "Existing"
+
+    def test_copy_com_error(self):
+        """Test copying when COM error occurs."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock source worksheet that raises COM error
+        class COMError(Exception):
+            def __init__(self):
+                self.hresult = 0x800A03EC
+
+        mock_ws_source = Mock()
+        mock_ws_source.Name = "Source"
+        mock_ws_source.Copy = Mock(side_effect=COMError())
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.side_effect = [mock_ws_source, None]
+
+                with pytest.raises(ExcelConnectionError) as exc_info:
+                    manager.copy("Source", "Copy")
+
+                assert exc_info.value.hresult == 0x800A03EC
+                assert "Failed to copy worksheet 'Source'" in str(exc_info.value)
+
+    def test_copy_placed_after_source(self):
+        """Test that copy is placed immediately after source."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock source worksheet at index 2
+        mock_ws_source = Mock()
+        mock_ws_source.Name = "Source"
+        mock_ws_source.Index = 2
+        mock_ws_source.Copy = Mock()
+
+        # Mock copied worksheet at index 3 (after source)
+        mock_ws_copy = Mock()
+        mock_ws_copy.Name = "Copy"
+        mock_ws_copy.Index = 3
+        mock_ws_copy.Visible = True
+        mock_ws_copy.UsedRange = None
+
+        mock_wb.ActiveSheet = mock_ws_copy
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.side_effect = [mock_ws_source, None]
+
+                info = manager.copy("Source", "Copy")
+
+                # Verify Copy was called with After=source
+                mock_ws_source.Copy.assert_called_once_with(After=mock_ws_source)
+                # Verify copy is at index 3 (after source at index 2)
+                assert info.index == 3

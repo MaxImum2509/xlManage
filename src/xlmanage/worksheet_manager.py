@@ -399,3 +399,141 @@ class WorksheetManager:
         finally:
             # Always restore DisplayAlerts
             app.DisplayAlerts = True
+
+    def list(self, workbook: Path | None = None) -> list[WorksheetInfo]:
+        """List all worksheets in a workbook.
+
+        Returns information about all worksheets in the workbook,
+        including hidden worksheets.
+
+        Args:
+            workbook: Optional path to the target workbook.
+                      If None, uses the active workbook.
+
+        Returns:
+            List of WorksheetInfo for each worksheet.
+            Returns empty list if workbook has no worksheets.
+
+        Raises:
+            WorkbookNotFoundError: If the specified workbook is not open
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> manager = WorksheetManager(excel_mgr)
+            >>> sheets = manager.list()
+            >>> for sheet in sheets:
+            ...     print(f"{sheet.index}. {sheet.name} ({sheet.rows_used} rows)")
+
+            >>> # List from specific workbook
+            >>> sheets = manager.list(Path("C:/work/report.xlsx"))
+
+        Note:
+            The list includes both visible and hidden worksheets.
+            Hidden worksheets have visible=False.
+        """
+        app = self._mgr.app
+        wb = _resolve_workbook(app, workbook)
+
+        worksheets = []
+
+        # Iterate through all worksheets
+        for ws in wb.Worksheets:
+            try:
+                info = self._get_worksheet_info(ws)
+                worksheets.append(info)
+            except Exception:
+                # Skip worksheets that can't be read
+                continue
+
+        return worksheets
+
+    def copy(
+        self, source: str, destination: str, workbook: Path | None = None
+    ) -> WorksheetInfo:
+        """Copy a worksheet and rename the copy.
+
+        Creates a duplicate of the source worksheet and gives it a new name.
+        The copy is placed immediately after the source worksheet.
+
+        Args:
+            source: Name of the worksheet to copy
+            destination: Name for the copy
+            workbook: Optional path to the target workbook.
+                      If None, uses the active workbook.
+
+        Returns:
+            WorksheetInfo of the newly created copy
+
+        Raises:
+            WorksheetNotFoundError: If source worksheet doesn't exist
+            WorksheetNameError: If destination name is invalid
+            WorksheetAlreadyExistsError: If destination name already exists
+            WorkbookNotFoundError: If the specified workbook is not open
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> manager = WorksheetManager(excel_mgr)
+            >>> info = manager.copy("Template", "January_Report")
+            >>> print(f"Created copy: {info.name} at position {info.index}")
+
+            >>> # Copy in specific workbook
+            >>> path = Path("C:/work/data.xlsx")
+            >>> info = manager.copy("Sheet1", "Sheet1_Backup", path)
+
+        Note:
+            Excel automatically activates the newly created copy.
+            The copy contains all data, formatting, and formulas from the source.
+        """
+        # Step 1: Validate destination name
+        _validate_sheet_name(destination)
+
+        # Step 2: Resolve target workbook
+        app = self._mgr.app
+        wb = _resolve_workbook(app, workbook)
+
+        # Step 3: Find source worksheet
+        ws_source = _find_worksheet(wb, source)
+        if ws_source is None:
+            from .exceptions import WorksheetNotFoundError
+
+            raise WorksheetNotFoundError(source, wb.Name)
+
+        # Step 4: Check destination name doesn't exist
+        from .exceptions import WorksheetAlreadyExistsError
+
+        ws_existing = _find_worksheet(wb, destination)
+        if ws_existing is not None:
+            raise WorksheetAlreadyExistsError(destination, wb.Name)
+
+        # Step 5: Copy the worksheet
+        try:
+            # Copy after the source worksheet
+            ws_source.Copy(After=ws_source)
+
+            # The copied worksheet becomes the active sheet
+            ws_copy = wb.ActiveSheet
+
+            # Rename the copy
+            ws_copy.Name = destination
+
+            # Step 6: Get worksheet information
+            info = self._get_worksheet_info(ws_copy)
+
+            return info
+
+        except WorksheetNameError:
+            # Re-raise our own exceptions
+            raise
+        except WorksheetAlreadyExistsError:
+            raise
+        except Exception as e:
+            # Wrap COM errors
+            if hasattr(e, "hresult"):
+                from .exceptions import ExcelConnectionError
+
+                raise ExcelConnectionError(
+                    getattr(e, "hresult"),
+                    f"Failed to copy worksheet '{source}': {str(e)}",
+                ) from e
+            else:
+                raise
