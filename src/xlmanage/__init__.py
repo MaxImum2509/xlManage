@@ -26,6 +26,10 @@ __all__ = [
     "WorksheetDeleteError",
     "WorksheetNameError",
     "WorksheetNotFoundError",
+    "TableNotFoundError",
+    "TableAlreadyExistsError",
+    "TableRangeError",
+    "TableNameError",
 ]
 
 # Import exceptions for easy access
@@ -36,6 +40,10 @@ from .exceptions import (
     ExcelInstanceNotFoundError,
     ExcelManageError,
     ExcelRPCError,
+    TableAlreadyExistsError,
+    TableNameError,
+    TableNotFoundError,
+    TableRangeError,
     WorkbookAlreadyOpenError,
     WorkbookNotFoundError,
     WorkbookSaveError,

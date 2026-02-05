@@ -214,3 +214,75 @@ class WorksheetNameError(ExcelManageError):
         self.name = name
         self.reason = reason
         super().__init__(f"Invalid worksheet name '{name}': {reason}")
+
+
+class TableNotFoundError(ExcelManageError):
+    """Table introuvable dans la feuille.
+
+    Raised when attempting to access a table that doesn't exist.
+    """
+
+    def __init__(self, name: str, worksheet_name: str):
+        """Initialize table not found error.
+
+        Args:
+            name: Name of the table that was not found
+            worksheet_name: Name of the worksheet that was searched
+        """
+        self.name = name
+        self.worksheet_name = worksheet_name
+        super().__init__(f"Table '{name}' not found in worksheet '{worksheet_name}'")
+
+
+class TableAlreadyExistsError(ExcelManageError):
+    """Nom de table déjà utilisé.
+
+    Raised when attempting to create a table with a name that already exists.
+    """
+
+    def __init__(self, name: str, workbook_name: str):
+        """Initialize table already exists error.
+
+        Args:
+            name: Name of the table that already exists
+            workbook_name: Name of the workbook (tables are unique per workbook)
+        """
+        self.name = name
+        self.workbook_name = workbook_name
+        super().__init__(f"Table '{name}' already exists in workbook '{workbook_name}'")
+
+
+class TableRangeError(ExcelManageError):
+    """Plage de table invalide.
+
+    Raised when a table range is invalid (syntax error, empty, overlaps, etc.).
+    """
+
+    def __init__(self, range_ref: str, reason: str):
+        """Initialize table range error.
+
+        Args:
+            range_ref: The invalid range reference (e.g., "A1:D10")
+            reason: Explanation of why the range is invalid
+        """
+        self.range_ref = range_ref
+        self.reason = reason
+        super().__init__(f"Invalid table range '{range_ref}': {reason}")
+
+
+class TableNameError(ExcelManageError):
+    """Nom de table invalide.
+
+    Raised when a table name violates Excel naming rules.
+    """
+
+    def __init__(self, name: str, reason: str):
+        """Initialize table name error.
+
+        Args:
+            name: The invalid table name
+            reason: Explanation of why the name is invalid
+        """
+        self.name = name
+        self.reason = reason
+        super().__init__(f"Invalid table name '{name}': {reason}")

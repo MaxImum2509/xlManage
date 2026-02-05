@@ -25,6 +25,10 @@ from xlmanage.exceptions import (
     ExcelInstanceNotFoundError,
     ExcelManageError,
     ExcelRPCError,
+    TableAlreadyExistsError,
+    TableNameError,
+    TableNotFoundError,
+    TableRangeError,
     WorkbookAlreadyOpenError,
     WorkbookNotFoundError,
     WorkbookSaveError,
@@ -564,5 +568,150 @@ class TestWorksheetNameError:
     def test_worksheet_name_error_inheritance(self):
         """Test WorksheetNameError inherits from ExcelManageError."""
         error = WorksheetNameError("Sheet!", "invalid character")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestTableNotFoundError:
+    """Tests for TableNotFoundError."""
+
+    def test_table_not_found_default_message(self):
+        """Test TableNotFoundError with default message."""
+        error = TableNotFoundError("tbl_Sales", "Data")
+
+        assert error.name == "tbl_Sales"
+        assert error.worksheet_name == "Data"
+        assert "not found" in str(error).lower()
+        assert "tbl_Sales" in str(error)
+        assert "Data" in str(error)
+
+    def test_table_not_found_different_names(self):
+        """Test TableNotFoundError with different table and worksheet names."""
+        error = TableNotFoundError("tbl_Customers", "Sheet1")
+
+        assert error.name == "tbl_Customers"
+        assert error.worksheet_name == "Sheet1"
+        assert "not found" in str(error).lower()
+
+    def test_table_not_found_empty_table_name(self):
+        """Test TableNotFoundError with empty table name."""
+        error = TableNotFoundError("", "Data")
+
+        assert error.name == ""
+        assert error.worksheet_name == "Data"
+        assert "Table ''" in str(error)
+
+    def test_table_not_found_inheritance(self):
+        """Test TableNotFoundError inherits from ExcelManageError."""
+        error = TableNotFoundError("tbl_Test", "Sheet1")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestTableAlreadyExistsError:
+    """Tests for TableAlreadyExistsError."""
+
+    def test_table_already_exists_default_message(self):
+        """Test TableAlreadyExistsError with default message."""
+        error = TableAlreadyExistsError("tbl_Sales", "workbook.xlsx")
+
+        assert error.name == "tbl_Sales"
+        assert error.workbook_name == "workbook.xlsx"
+        assert "already exists" in str(error).lower()
+        assert "tbl_Sales" in str(error)
+        assert "workbook.xlsx" in str(error)
+
+    def test_table_already_exists_different_names(self):
+        """Test TableAlreadyExistsError with different names."""
+        error = TableAlreadyExistsError("tbl_Data", "report.xlsx")
+
+        assert error.name == "tbl_Data"
+        assert error.workbook_name == "report.xlsx"
+        assert "already exists" in str(error).lower()
+
+    def test_table_already_exists_inheritance(self):
+        """Test TableAlreadyExistsError inherits from ExcelManageError."""
+        error = TableAlreadyExistsError("tbl_Test", "test.xlsx")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestTableRangeError:
+    """Tests for TableRangeError."""
+
+    def test_table_range_error_default_reason(self):
+        """Test TableRangeError with default reason."""
+        error = TableRangeError("A1:D", "invalid syntax")
+
+        assert error.range_ref == "A1:D"
+        assert error.reason == "invalid syntax"
+        assert "Invalid table range" in str(error)
+        assert "A1:D" in str(error)
+        assert "invalid syntax" in str(error)
+
+    def test_table_range_error_empty_range(self):
+        """Test TableRangeError for empty range."""
+        error = TableRangeError("", "range cannot be empty")
+
+        assert error.range_ref == ""
+        assert error.reason == "range cannot be empty"
+        assert "range cannot be empty" in str(error)
+
+    def test_table_range_error_overlapping(self):
+        """Test TableRangeError for overlapping range."""
+        error = TableRangeError("A1:D10", "overlaps with existing table")
+
+        assert error.range_ref == "A1:D10"
+        assert error.reason == "overlaps with existing table"
+        assert "overlaps" in str(error)
+
+    def test_table_range_error_inheritance(self):
+        """Test TableRangeError inherits from ExcelManageError."""
+        error = TableRangeError("A1:Z", "invalid")
+        assert isinstance(error, ExcelManageError)
+        assert isinstance(error, Exception)
+
+
+class TestTableNameError:
+    """Tests for TableNameError."""
+
+    def test_table_name_error_default_reason(self):
+        """Test TableNameError with default reason."""
+        error = TableNameError("tbl Sales", "contains spaces")
+
+        assert error.name == "tbl Sales"
+        assert error.reason == "contains spaces"
+        assert "Invalid table name" in str(error)
+        assert "tbl Sales" in str(error)
+        assert "contains spaces" in str(error)
+
+    def test_table_name_error_too_long(self):
+        """Test TableNameError for name too long."""
+        long_name = "A" * 256
+        error = TableNameError(long_name, "name exceeds 255 characters")
+
+        assert error.name == long_name
+        assert error.reason == "name exceeds 255 characters"
+        assert "255 characters" in str(error)
+
+    def test_table_name_error_starts_with_digit(self):
+        """Test TableNameError for name starting with digit."""
+        error = TableNameError("1Data", "must start with letter or underscore")
+
+        assert error.name == "1Data"
+        assert error.reason == "must start with letter or underscore"
+        assert "Invalid table name" in str(error)
+
+    def test_table_name_error_cell_reference(self):
+        """Test TableNameError for name being a cell reference."""
+        error = TableNameError("A1", "cannot be a cell reference")
+
+        assert error.name == "A1"
+        assert error.reason == "cannot be a cell reference"
+        assert "cell reference" in str(error)
+
+    def test_table_name_error_inheritance(self):
+        """Test TableNameError inherits from ExcelManageError."""
+        error = TableNameError("tbl!", "invalid character")
         assert isinstance(error, ExcelManageError)
         assert isinstance(error, Exception)
