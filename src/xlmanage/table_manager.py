@@ -27,7 +27,12 @@ try:
 except ImportError:
     CDispatch = Any
 
-from .exceptions import TableAlreadyExistsError, TableNameError, TableRangeError
+from .exceptions import (
+    TableAlreadyExistsError,
+    TableNameError,
+    TableNotFoundError,
+    TableRangeError,
+)
 from .worksheet_manager import _find_worksheet, _resolve_workbook
 
 # Excel table name constraints
@@ -266,3 +271,113 @@ class TableManager:
         table.Name = name
 
         return self._get_table_info(table, ws)
+
+    def delete(
+        self,
+        name: str,
+        worksheet: str | None = None,
+        workbook: Path | None = None,
+    ) -> None:
+        """Delete a table.
+
+        Deletes the specified table from the worksheet.
+
+        Args:
+            name: Name of the table to delete
+            worksheet: Worksheet containing the table (if None, search all)
+            workbook: Target workbook path (if None, uses active workbook)
+
+        Raises:
+            TableNotFoundError: If the table doesn't exist
+            WorkbookNotFoundError: If the specified workbook is not open
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> manager = TableManager(excel_mgr)
+            >>> manager.delete("tbl_Sales")
+            >>> manager.delete("tbl_Old", worksheet="Archive")
+        """
+        # Resolve workbook
+        wb = _resolve_workbook(self._mgr.app, workbook)
+
+        # Search for table
+        table_found = None
+
+        if worksheet is None:
+            # Search all worksheets
+            for sheet in wb.Worksheets:
+                table = _find_table(sheet, name)
+                if table:
+                    table_found = table
+                    break
+        else:
+            # Search specific worksheet
+            ws = _find_worksheet(wb, worksheet)
+            table = _find_table(ws, name)
+            if table:
+                table_found = table
+
+        if not table_found:
+            worksheet_context = worksheet if worksheet else "any worksheet"
+            raise TableNotFoundError(name, worksheet_context)
+
+        # Delete the table
+        table_found.Delete()
+
+    def list(
+        self,
+        worksheet: str | None = None,
+        workbook: Path | None = None,
+    ) -> list[TableInfo]:
+        """List all tables.
+
+        Returns information about all tables in the worksheet(s).
+
+        Args:
+            worksheet: Worksheet name to search (if None, list all in workbook)
+            workbook: Target workbook path (if None, uses active workbook)
+
+        Returns:
+            List of TableInfo for each table
+            Returns empty list if no tables found
+
+        Raises:
+            WorkbookNotFoundError: If the specified workbook is not open
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> manager = TableManager(excel_mgr)
+            >>> tables = manager.list(worksheet="Data")
+            >>> for table in tables:
+            ...     print(f"{table.name}: {table.rows_count} rows")
+        """
+        # Resolve workbook
+        wb = _resolve_workbook(self._mgr.app, workbook)
+
+        tables = []
+
+        if worksheet is None:
+            # List all tables in workbook
+            for sheet in wb.Worksheets:
+                try:
+                    for table in sheet.ListObjects:
+                        try:
+                            tables.append(self._get_table_info(table, sheet))
+                        except Exception:
+                            # Skip tables that can't be read
+                            continue
+                except Exception:
+                    # Skip sheets that can't be read
+                    continue
+        else:
+            # List tables in specific worksheet
+            ws = _find_worksheet(wb, worksheet)
+            if ws:
+                for table in ws.ListObjects:
+                    try:
+                        tables.append(self._get_table_info(table, ws))
+                    except Exception:
+                        # Skip tables that can't be read
+                        continue
+
+        return tables

@@ -21,9 +21,10 @@ import pytest
 from unittest.mock import MagicMock, Mock
 
 from xlmanage.exceptions import (
-    TableNameError,
-    TableRangeError,
     TableAlreadyExistsError,
+    TableNameError,
+    TableNotFoundError,
+    TableRangeError,
 )
 from xlmanage.table_manager import (
     TABLE_NAME_MAX_LENGTH,
@@ -579,3 +580,218 @@ class TestTableManagerCreate:
 
         assert exc_info.value.name == "tbl_Sales"
         assert exc_info.value.workbook_name == "Test.xlsx"
+
+
+class TestTableManagerDelete:
+    """Tests for TableManager.delete() method."""
+
+    def test_delete_from_active_workbook(self):
+        """Test deleting table searching all worksheets."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock worksheet with table
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+
+        # Mock table
+        mock_table = Mock()
+        mock_table.Name = "tbl_Sales"
+        mock_ws.ListObjects = [mock_table]
+
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        manager.delete("tbl_Sales")
+
+        # Verify Delete was called
+        mock_table.Delete.assert_called_once()
+
+    def test_delete_from_specific_worksheet(self):
+        """Test deleting table from specific worksheet."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+
+        # Mock table
+        mock_table = Mock()
+        mock_table.Name = "tbl_Sales"
+        mock_ws.ListObjects = [mock_table]
+
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        manager.delete("tbl_Sales", worksheet="Data")
+
+        mock_table.Delete.assert_called_once()
+
+    def test_delete_table_not_found(self):
+        """Test delete with non-existent table."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with empty worksheet
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+        mock_ws.ListObjects = []
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+
+        with pytest.raises(TableNotFoundError) as exc_info:
+            manager.delete("tbl_Missing")
+
+        assert exc_info.value.name == "tbl_Missing"
+
+
+class TestTableManagerList:
+    """Tests for TableManager.list() method."""
+
+    def test_list_all_tables_in_workbook(self):
+        """Test listing all tables in workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock first worksheet with one table
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Sheet1"
+        mock_table1 = Mock()
+        mock_table1.Name = "tbl_Sales"
+        mock_table1.Range.Address = "$A$1:$D$10"
+        mock_table1.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table1.DataBodyRange.Rows.Count = 9
+        mock_ws1.ListObjects = [mock_table1]
+
+        # Mock second worksheet with one table
+        mock_ws2 = Mock()
+        mock_ws2.Name = "Sheet2"
+        mock_table2 = Mock()
+        mock_table2.Name = "tbl_Products"
+        mock_table2.Range.Address = "$A$1:$C$20"
+        mock_table2.HeaderRowRange.Address = "$A$1:$C$1"
+        mock_table2.DataBodyRange.Rows.Count = 19
+        mock_ws2.ListObjects = [mock_table2]
+
+        mock_wb.Worksheets = [mock_ws1, mock_ws2]
+
+        manager = TableManager(mock_excel_mgr)
+        tables = manager.list()
+
+        assert len(tables) == 2
+        assert tables[0].name == "tbl_Sales"
+        assert tables[0].worksheet_name == "Sheet1"
+        assert tables[1].name == "tbl_Products"
+        assert tables[1].worksheet_name == "Sheet2"
+
+    def test_list_tables_in_specific_worksheet(self):
+        """Test listing tables in specific worksheet."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+        mock_table = Mock()
+        mock_table.Name = "tbl_Sales"
+        mock_table.Range.Address = "$A$1:$D$10"
+        mock_table.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table.DataBodyRange.Rows.Count = 9
+        mock_ws.ListObjects = [mock_table]
+
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        tables = manager.list(worksheet="Data")
+
+        assert len(tables) == 1
+        assert tables[0].name == "tbl_Sales"
+        assert tables[0].worksheet_name == "Data"
+
+    def test_list_empty_workbook(self):
+        """Test listing tables in workbook with no tables."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with no tables
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        mock_ws = Mock()
+        mock_ws.Name = "Sheet1"
+        mock_ws.ListObjects = []
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        tables = manager.list()
+
+        assert len(tables) == 0
+
+    def test_list_handles_corrupted_table(self):
+        """Test list continues when a table can't be read."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+
+        # Mock corrupted table (raises exception when accessing Name)
+        mock_table1 = Mock()
+        type(mock_table1).Name = property(lambda self: (_ for _ in ()).throw(Exception("Corrupted")))
+
+        # Mock valid table
+        mock_table2 = Mock()
+        mock_table2.Name = "tbl_Valid"
+        mock_table2.Range.Address = "$A$1:$D$10"
+        mock_table2.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table2.DataBodyRange.Rows.Count = 9
+
+        mock_ws.ListObjects = [mock_table1, mock_table2]
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        tables = manager.list()
+
+        # Should skip corrupted table and return only valid one
+        assert len(tables) == 1
+        assert tables[0].name == "tbl_Valid"

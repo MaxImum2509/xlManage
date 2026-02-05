@@ -1,6 +1,6 @@
 # Epic 8 - Story 5: Implémenter TableManager.delete() et list()
 
-**Statut** : ✅ À implémenter
+**Statut** : ✅ Implémentée
 
 **En tant que** utilisateur
 **Je veux** supprimer une table et lister toutes les tables
@@ -91,8 +91,8 @@ def list(
 
 ## Définition of Done
 
-- [ ] Méthodes delete() et list() implémentées
-- [ ] delete() supprime complètement la table
-- [ ] list() supporte recherche par feuille ou classeur entier
-- [ ] Tous les tests passent (minimum 8 tests)
-- [ ] Couverture de code > 95%
+- [x] Méthodes delete() et list() implémentées
+- [x] delete() supprime complètement la table
+- [x] list() supporte recherche par feuille ou classeur entier
+- [x] Tous les tests passent (48 tests au total, 7 pour delete/list)
+- [x] Couverture de code 91%
