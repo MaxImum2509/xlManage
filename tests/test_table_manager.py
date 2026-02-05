@@ -18,12 +18,15 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import pytest
+from unittest.mock import MagicMock
 
-from xlmanage.exceptions import TableNameError
+from xlmanage.exceptions import TableNameError, TableRangeError
 from xlmanage.table_manager import (
     TABLE_NAME_MAX_LENGTH,
     TABLE_NAME_PATTERN,
     TableInfo,
+    _find_table,
+    _validate_range,
     _validate_table_name,
 )
 
@@ -255,3 +258,163 @@ class TestValidateTableName:
 
         for name in valid_names:
             _validate_table_name(name)  # Should not raise
+
+
+class TestFindTable:
+    """Tests for _find_table function."""
+
+    def test_find_table_success(self):
+        """Test _find_table finds a table by name."""
+        # Create mock worksheet with tables
+        ws = MagicMock()
+        table1 = MagicMock()
+        table1.Name = "tbl_Sales"
+        table2 = MagicMock()
+        table2.Name = "tbl_Products"
+        ws.ListObjects = [table1, table2]
+
+        result = _find_table(ws, "tbl_Sales")
+
+        assert result == table1
+
+    def test_find_table_not_found(self):
+        """Test _find_table returns None when table doesn't exist."""
+        ws = MagicMock()
+        table1 = MagicMock()
+        table1.Name = "tbl_Sales"
+        ws.ListObjects = [table1]
+
+        result = _find_table(ws, "tbl_Missing")
+
+        assert result is None
+
+    def test_find_table_case_sensitive(self):
+        """Test _find_table is case-sensitive."""
+        ws = MagicMock()
+        table1 = MagicMock()
+        table1.Name = "tbl_Sales"
+        ws.ListObjects = [table1]
+
+        # Different case should not match
+        result = _find_table(ws, "TBL_SALES")
+        assert result is None
+
+        # Exact case should match
+        result = _find_table(ws, "tbl_Sales")
+        assert result == table1
+
+    def test_find_table_empty_worksheet(self):
+        """Test _find_table with no tables in worksheet."""
+        ws = MagicMock()
+        ws.ListObjects = []
+
+        result = _find_table(ws, "tbl_Any")
+
+        assert result is None
+
+    def test_find_table_handles_error(self):
+        """Test _find_table continues when table can't be read."""
+        ws = MagicMock()
+        table1 = MagicMock()
+        table1.Name = Exception("COM error")
+        table2 = MagicMock()
+        table2.Name = "tbl_Valid"
+        ws.ListObjects = [table1, table2]
+
+        result = _find_table(ws, "tbl_Valid")
+
+        assert result == table2
+
+
+class TestValidateRange:
+    """Tests for _validate_range function."""
+
+    def test_validate_valid_ranges(self):
+        """Test _validate_range with valid range references."""
+        valid_ranges = [
+            "A1:D10",
+            "B5:Z100",
+            "AA1:ZZ999",
+            "A1:A1",  # Single cell as range
+            "$A$1:$D$10",  # With $ signs
+        ]
+
+        for range_ref in valid_ranges:
+            _validate_range(range_ref)  # Should not raise
+
+    def test_validate_range_with_sheet_reference(self):
+        """Test _validate_range with sheet name prefix."""
+        valid_ranges = [
+            "Sheet1!A1:D10",
+            "'My Sheet'!B5:Z100",
+            "Data!A1:Z999",
+        ]
+
+        for range_ref in valid_ranges:
+            _validate_range(range_ref)  # Should not raise
+
+    def test_validate_empty_range(self):
+        """Test _validate_range with empty range."""
+        with pytest.raises(TableRangeError) as exc_info:
+            _validate_range("")
+
+        assert exc_info.value.range_ref == ""
+        assert "cannot be empty" in exc_info.value.reason
+
+    def test_validate_whitespace_only_range(self):
+        """Test _validate_range with whitespace-only range."""
+        with pytest.raises(TableRangeError) as exc_info:
+            _validate_range("   ")
+
+        assert "cannot be empty" in exc_info.value.reason
+
+    def test_validate_range_missing_colon(self):
+        """Test _validate_range with no colon."""
+        with pytest.raises(TableRangeError) as exc_info:
+            _validate_range("A1")
+
+        assert exc_info.value.range_ref == "A1"
+        assert "must have format A1:Z99" in exc_info.value.reason
+
+    def test_validate_range_invalid_syntax(self):
+        """Test _validate_range with invalid syntax."""
+        invalid_ranges = [
+            "A1:D",  # Incomplete end cell
+            "1:D10",  # Invalid start cell
+            "A:D10",  # Column reference without row
+            "A1:10",  # Number only for end cell
+        ]
+
+        for range_ref in invalid_ranges:
+            with pytest.raises(TableRangeError) as exc_info:
+                _validate_range(range_ref)
+
+            assert "invalid range syntax" in exc_info.value.reason
+
+    def test_validate_range_no_colon(self):
+        """Test _validate_range with no colon at all."""
+        with pytest.raises(TableRangeError) as exc_info:
+            _validate_range("ABC")
+
+        assert "must have format A1:Z99" in exc_info.value.reason
+
+    def test_validate_r1c1_range(self):
+        """Test _validate_range with R1C1 notation."""
+        valid_ranges = [
+            "R1C1:R10C5",
+            "r1c1:r100c200",
+        ]
+
+        for range_ref in valid_ranges:
+            _validate_range(range_ref)  # Should not raise
+
+    def test_validate_range_with_dollar_signs(self):
+        """Test _validate_range handles $ signs correctly."""
+        valid_ranges = [
+            "$A$1:$D$10",
+            "A$1:D$10",
+            "$A1:$D10",
+        ]
+
+        for range_ref in valid_ranges:
+            _validate_range(range_ref)  # Should not raise
