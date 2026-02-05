@@ -327,3 +327,75 @@ class WorksheetManager:
                 ) from e
             else:
                 raise
+
+    def delete(self, name: str, workbook: Path | None = None) -> None:
+        """Delete a worksheet.
+
+        Deletes the specified worksheet from the workbook.
+        Excel always shows a confirmation dialog unless DisplayAlerts is disabled.
+
+        Args:
+            name: Name of the worksheet to delete
+            workbook: Optional path to the target workbook.
+                      If None, uses the active workbook.
+
+        Raises:
+            WorksheetNotFoundError: If the worksheet doesn't exist
+            WorksheetDeleteError: If the worksheet cannot be deleted
+            WorkbookNotFoundError: If the specified workbook is not open
+            ExcelConnectionError: If COM connection fails
+
+        Examples:
+            >>> # Delete a worksheet
+            >>> manager = WorksheetManager(excel_mgr)
+            >>> manager.delete("OldSheet")
+
+            >>> # Delete from specific workbook
+            >>> manager.delete("TempData", Path("C:/work/report.xlsx"))
+
+        Warning:
+            You cannot delete the last visible worksheet in a workbook.
+            Excel requires at least one visible worksheet.
+
+        Note:
+            DisplayAlerts is ALWAYS set to False to prevent Excel dialogs.
+            The parameter is automatically managed and restored.
+        """
+        # Step 1: Resolve target workbook
+        app = self._mgr.app
+        wb = _resolve_workbook(app, workbook)
+
+        # Step 2: Find the worksheet
+        ws = _find_worksheet(wb, name)
+        if ws is None:
+            from .exceptions import WorksheetNotFoundError
+
+            raise WorksheetNotFoundError(name, wb.Name)
+
+        # Step 3: Check if it's the last visible sheet
+        visible_count = 0
+        for sheet in wb.Worksheets:
+            try:
+                if sheet.Visible:
+                    visible_count += 1
+                    if visible_count > 1:
+                        break  # We have at least 2 visible sheets
+            except Exception:
+                continue
+
+        if visible_count == 1 and ws.Visible:
+            from .exceptions import WorksheetDeleteError
+
+            raise WorksheetDeleteError(name, "cannot delete the last visible worksheet")
+
+        # Step 4: Delete the worksheet
+        # CRITICAL: DisplayAlerts MUST be False to avoid Excel dialog
+        app.DisplayAlerts = False
+
+        try:
+            ws.Delete()
+            # Clean up COM reference
+            del ws
+        finally:
+            # Always restore DisplayAlerts
+            app.DisplayAlerts = True

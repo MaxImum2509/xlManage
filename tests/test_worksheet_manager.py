@@ -47,6 +47,8 @@ from xlmanage.exceptions import (
     WorkbookNotFoundError,
     ExcelConnectionError,
     WorksheetAlreadyExistsError,
+    WorksheetNotFoundError,
+    WorksheetDeleteError,
 )
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, PropertyMock
@@ -964,3 +966,283 @@ class TestWorksheetManagerCreate:
                 assert info.rows_used == 50
                 assert info.columns_used == 5
                 assert isinstance(info, WorksheetInfo)
+
+
+class TestWorksheetManagerDelete:
+    """Tests for WorksheetManager.delete() method."""
+
+    def test_delete_worksheet_success(self):
+        """Test deleting a worksheet successfully."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock worksheet to delete
+        mock_ws = Mock()
+        mock_ws.Name = "ToDelete"
+        mock_ws.Visible = True
+        mock_ws.Delete = Mock()
+
+        # Mock other visible sheets (so we have at least 2 visible)
+        mock_ws2 = Mock()
+        mock_ws2.Visible = True
+        mock_wb.Worksheets = [mock_ws, mock_ws2]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws
+
+                manager.delete("ToDelete")
+
+                # Verify Delete was called
+                mock_ws.Delete.assert_called_once()
+
+                # Verify DisplayAlerts was managed
+                assert mock_app.DisplayAlerts is True  # Restored
+
+    def test_delete_from_specific_workbook(self):
+        """Test deleting worksheet from specific workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Specific.xlsx"
+
+        # Mock worksheets
+        mock_ws = Mock()
+        mock_ws.Name = "OldSheet"
+        mock_ws.Visible = True
+        mock_ws.Delete = Mock()
+
+        mock_ws2 = Mock()
+        mock_ws2.Visible = True
+        mock_wb.Worksheets = [mock_ws, mock_ws2]
+
+        manager = WorksheetManager(mock_excel_mgr)
+        workbook_path = Path("C:/data/Specific.xlsx")
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws
+
+                manager.delete("OldSheet", workbook_path)
+
+                mock_resolve.assert_called_once_with(mock_app, workbook_path)
+                mock_ws.Delete.assert_called_once()
+
+    def test_delete_worksheet_not_found(self):
+        """Test deleting non-existent worksheet raises error."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = None  # Worksheet not found
+
+                with pytest.raises(WorksheetNotFoundError) as exc_info:
+                    manager.delete("Missing")
+
+                assert exc_info.value.name == "Missing"
+                assert exc_info.value.workbook_name == "Test.xlsx"
+
+    def test_delete_last_visible_sheet_raises_error(self):
+        """Test deleting last visible sheet raises error."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with only 1 visible sheet
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock the only visible worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "LastSheet"
+        mock_ws.Visible = True
+
+        # Mock hidden sheets (not counted)
+        mock_ws_hidden = Mock()
+        mock_ws_hidden.Visible = False
+
+        mock_wb.Worksheets = [mock_ws, mock_ws_hidden]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws
+
+                with pytest.raises(WorksheetDeleteError) as exc_info:
+                    manager.delete("LastSheet")
+
+                assert exc_info.value.name == "LastSheet"
+                assert "last visible worksheet" in str(exc_info.value).lower()
+
+    def test_delete_hidden_sheet_when_only_one_visible(self):
+        """Test deleting hidden sheet when only one visible sheet exists."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock visible sheet
+        mock_ws_visible = Mock()
+        mock_ws_visible.Visible = True
+
+        # Mock hidden sheet to delete
+        mock_ws_hidden = Mock()
+        mock_ws_hidden.Name = "HiddenSheet"
+        mock_ws_hidden.Visible = False
+        mock_ws_hidden.Delete = Mock()
+
+        mock_wb.Worksheets = [mock_ws_visible, mock_ws_hidden]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws_hidden
+
+                # Should succeed because we're deleting a hidden sheet
+                manager.delete("HiddenSheet")
+
+                mock_ws_hidden.Delete.assert_called_once()
+
+    def test_delete_display_alerts_restored_on_error(self):
+        """Test DisplayAlerts is restored even if Delete raises error."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock worksheet that raises error on Delete
+        mock_ws = Mock()
+        mock_ws.Name = "ErrorSheet"
+        mock_ws.Visible = True
+        mock_ws.Delete = Mock(side_effect=Exception("Delete failed"))
+
+        mock_ws2 = Mock()
+        mock_ws2.Visible = True
+        mock_wb.Worksheets = [mock_ws, mock_ws2]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws
+
+                # Delete should raise, but DisplayAlerts should be restored
+                with pytest.raises(Exception) as exc_info:
+                    manager.delete("ErrorSheet")
+
+                assert "Delete failed" in str(exc_info.value)
+                # Verify DisplayAlerts was restored
+                assert mock_app.DisplayAlerts is True
+
+    def test_delete_with_multiple_visible_sheets(self):
+        """Test deleting when multiple visible sheets exist."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with 3 visible sheets
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        mock_ws1 = Mock()
+        mock_ws1.Name = "Sheet1"
+        mock_ws1.Visible = True
+        mock_ws1.Delete = Mock()
+
+        mock_ws2 = Mock()
+        mock_ws2.Visible = True
+
+        mock_ws3 = Mock()
+        mock_ws3.Visible = True
+
+        mock_wb.Worksheets = [mock_ws1, mock_ws2, mock_ws3]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws1
+
+                manager.delete("Sheet1")
+
+                # Should succeed with 3 visible sheets
+                mock_ws1.Delete.assert_called_once()
+
+    def test_delete_handles_worksheet_iteration_error(self):
+        """Test delete handles errors during worksheet iteration."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock worksheet to delete
+        mock_ws = Mock()
+        mock_ws.Name = "ToDelete"
+        mock_ws.Visible = True
+        mock_ws.Delete = Mock()
+
+        # Mock another visible sheet
+        mock_ws2 = Mock()
+        mock_ws2.Visible = True
+
+        # Mock sheet that raises error when accessing Visible
+        mock_ws_error = Mock()
+        type(mock_ws_error).Visible = PropertyMock(side_effect=Exception("Error"))
+
+        mock_wb.Worksheets = [mock_ws, mock_ws2, mock_ws_error]
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch("xlmanage.worksheet_manager._resolve_workbook") as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch("xlmanage.worksheet_manager._find_worksheet") as mock_find:
+                mock_find.return_value = mock_ws
+
+                # Should succeed, ignoring the error sheet
+                manager.delete("ToDelete")
+
+                mock_ws.Delete.assert_called_once()
