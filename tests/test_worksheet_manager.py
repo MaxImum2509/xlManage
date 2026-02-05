@@ -23,6 +23,7 @@ import re
 try:
     from xlmanage.worksheet_manager import (
         WorksheetInfo,
+        WorksheetManager,
         _validate_sheet_name,
         _resolve_workbook,
         _find_worksheet,
@@ -32,6 +33,7 @@ try:
 except ImportError:
     from xlmanage.worksheet_manager import (
         WorksheetInfo,
+        WorksheetManager,
         _validate_sheet_name,
         _resolve_workbook,
         _find_worksheet,
@@ -44,9 +46,10 @@ from xlmanage.exceptions import (
     ExcelManageError,
     WorkbookNotFoundError,
     ExcelConnectionError,
+    WorksheetAlreadyExistsError,
 )
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, MagicMock, patch, PropertyMock
 
 
 class TestWorksheetInfo:
@@ -572,3 +575,392 @@ class TestFindWorksheet:
         assert result.Name == "TestSheet"
         assert result.Index == 1
         assert result.Visible is True
+
+
+class TestWorksheetManager:
+    """Tests for WorksheetManager class."""
+
+    def test_worksheet_manager_initialization(self):
+        """Test WorksheetManager initialization."""
+        mock_excel_mgr = Mock()
+        manager = WorksheetManager(mock_excel_mgr)
+
+        assert manager._mgr == mock_excel_mgr
+
+    def test_get_worksheet_info_with_data(self):
+        """Test _get_worksheet_info with worksheet containing data."""
+        mock_excel_mgr = Mock()
+        manager = WorksheetManager(mock_excel_mgr)
+
+        # Create mock worksheet with data
+        mock_ws = Mock()
+        mock_ws.Name = "DataSheet"
+        mock_ws.Index = 2
+        mock_ws.Visible = True
+
+        # Mock UsedRange
+        mock_used_range = Mock()
+        mock_used_range.Rows.Count = 100
+        mock_used_range.Columns.Count = 10
+        mock_ws.UsedRange = mock_used_range
+
+        info = manager._get_worksheet_info(mock_ws)
+
+        assert info.name == "DataSheet"
+        assert info.index == 2
+        assert info.visible is True
+        assert info.rows_used == 100
+        assert info.columns_used == 10
+
+    def test_get_worksheet_info_empty_sheet(self):
+        """Test _get_worksheet_info with empty worksheet."""
+        mock_excel_mgr = Mock()
+        manager = WorksheetManager(mock_excel_mgr)
+
+        # Create mock worksheet with None UsedRange
+        mock_ws = Mock()
+        mock_ws.Name = "EmptySheet"
+        mock_ws.Index = 1
+        mock_ws.Visible = True
+        mock_ws.UsedRange = None
+
+        info = manager._get_worksheet_info(mock_ws)
+
+        assert info.name == "EmptySheet"
+        assert info.index == 1
+        assert info.visible is True
+        assert info.rows_used == 0
+        assert info.columns_used == 0
+
+    def test_get_worksheet_info_used_range_error(self):
+        """Test _get_worksheet_info when UsedRange raises exception."""
+        mock_excel_mgr = Mock()
+        manager = WorksheetManager(mock_excel_mgr)
+
+        # Create mock worksheet that raises exception on UsedRange
+        mock_ws = Mock()
+        mock_ws.Name = "ErrorSheet"
+        mock_ws.Index = 3
+        mock_ws.Visible = False
+        type(mock_ws).UsedRange = PropertyMock(
+            side_effect=Exception("UsedRange failed")
+        )
+
+        info = manager._get_worksheet_info(mock_ws)
+
+        assert info.name == "ErrorSheet"
+        assert info.index == 3
+        assert info.visible is False
+        assert info.rows_used == 0
+        assert info.columns_used == 0
+
+
+class TestWorksheetManagerCreate:
+    """Tests for WorksheetManager.create() method."""
+
+    def test_create_in_active_workbook(self):
+        """Test creating worksheet in active workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock active workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_wb.Worksheets.Count = 2
+
+        # Mock last worksheet
+        mock_last_ws = Mock()
+        mock_last_ws.Name = "Sheet2"
+        mock_wb.Worksheets = Mock(return_value=mock_last_ws)
+
+        # Mock new worksheet
+        mock_new_ws = Mock()
+        mock_new_ws.Name = "NewSheet"
+        mock_new_ws.Index = 3
+        mock_new_ws.Visible = True
+        mock_new_ws.UsedRange = None
+
+        # Configure Worksheets.Add to return new worksheet
+        mock_wb.Worksheets.Add = Mock(return_value=mock_new_ws)
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch(
+                "xlmanage.worksheet_manager._find_worksheet"
+            ) as mock_find:
+                mock_find.return_value = None  # Sheet doesn't exist
+
+                info = manager.create("NewSheet")
+
+                # Verify worksheet was created
+                assert info.name == "NewSheet"
+                assert info.index == 3
+                assert info.visible is True
+                assert info.rows_used == 0
+                assert info.columns_used == 0
+
+                # Verify calls
+                mock_resolve.assert_called_once_with(mock_app, None)
+                mock_find.assert_called_once_with(mock_wb, "NewSheet")
+                mock_wb.Worksheets.Add.assert_called_once_with(
+                    After=mock_last_ws
+                )
+                assert mock_new_ws.Name == "NewSheet"
+
+    def test_create_in_specific_workbook(self):
+        """Test creating worksheet in specific workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock specific workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Specific.xlsx"
+        mock_wb.Worksheets.Count = 1
+
+        # Mock last worksheet
+        mock_last_ws = Mock()
+        mock_wb.Worksheets = Mock(return_value=mock_last_ws)
+
+        # Mock new worksheet
+        mock_new_ws = Mock()
+        mock_new_ws.Name = "DataSheet"
+        mock_new_ws.Index = 2
+        mock_new_ws.Visible = True
+        mock_new_ws.UsedRange = None
+
+        mock_wb.Worksheets.Add = Mock(return_value=mock_new_ws)
+
+        manager = WorksheetManager(mock_excel_mgr)
+        workbook_path = Path("C:/data/Specific.xlsx")
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch(
+                "xlmanage.worksheet_manager._find_worksheet"
+            ) as mock_find:
+                mock_find.return_value = None
+
+                info = manager.create("DataSheet", workbook_path)
+
+                assert info.name == "DataSheet"
+                assert info.index == 2
+                mock_resolve.assert_called_once_with(mock_app, workbook_path)
+
+    def test_create_invalid_name(self):
+        """Test creating worksheet with invalid name."""
+        mock_excel_mgr = Mock()
+        manager = WorksheetManager(mock_excel_mgr)
+
+        # Test empty name
+        with pytest.raises(WorksheetNameError) as exc_info:
+            manager.create("")
+
+        assert "cannot be empty" in str(exc_info.value).lower()
+
+        # Test name with forbidden character
+        with pytest.raises(WorksheetNameError) as exc_info:
+            manager.create("Sheet/Invalid")
+
+        assert "forbidden character" in str(exc_info.value).lower()
+
+    def test_create_duplicate_name(self):
+        """Test creating worksheet with name that already exists."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+
+        # Mock existing worksheet
+        mock_existing_ws = Mock()
+        mock_existing_ws.Name = "Existing"
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch(
+                "xlmanage.worksheet_manager._find_worksheet"
+            ) as mock_find:
+                mock_find.return_value = mock_existing_ws  # Sheet exists
+
+                with pytest.raises(WorksheetAlreadyExistsError) as exc_info:
+                    manager.create("Existing")
+
+                assert exc_info.value.name == "Existing"
+                assert exc_info.value.workbook_name == "Test.xlsx"
+                assert "already exists" in str(exc_info.value).lower()
+
+    def test_create_workbook_not_found(self):
+        """Test creating worksheet in non-existent workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        manager = WorksheetManager(mock_excel_mgr)
+        workbook_path = Path("C:/data/missing.xlsx")
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.side_effect = WorkbookNotFoundError(
+                workbook_path, "Workbook not found"
+            )
+
+            with pytest.raises(WorkbookNotFoundError) as exc_info:
+                manager.create("NewSheet", workbook_path)
+
+            assert exc_info.value.path == workbook_path
+
+    def test_create_com_error(self):
+        """Test creating worksheet when COM error occurs."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_wb.Worksheets.Count = 1
+
+        # Mock last worksheet
+        mock_last_ws = Mock()
+        mock_wb.Worksheets = Mock(return_value=mock_last_ws)
+
+        # Mock Worksheets.Add to raise COM error
+        class COMError(Exception):
+            def __init__(self):
+                self.hresult = 0x800A03EC
+
+        mock_wb.Worksheets.Add = Mock(side_effect=COMError())
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch(
+                "xlmanage.worksheet_manager._find_worksheet"
+            ) as mock_find:
+                mock_find.return_value = None
+
+                with pytest.raises(ExcelConnectionError) as exc_info:
+                    manager.create("NewSheet")
+
+                assert exc_info.value.hresult == 0x800A03EC
+                assert "Failed to create worksheet" in str(exc_info.value)
+
+    def test_create_at_end_of_workbook(self):
+        """Test that worksheet is created at the end of workbook."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook with 3 sheets
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_wb.Worksheets.Count = 3
+
+        # Mock last worksheet (index 3)
+        mock_last_ws = Mock()
+        mock_last_ws.Name = "Sheet3"
+        mock_last_ws.Index = 3
+        mock_wb.Worksheets = Mock(return_value=mock_last_ws)
+
+        # Mock new worksheet (should be index 4)
+        mock_new_ws = Mock()
+        mock_new_ws.Name = "LastSheet"
+        mock_new_ws.Index = 4
+        mock_new_ws.Visible = True
+        mock_new_ws.UsedRange = None
+
+        mock_wb.Worksheets.Add = Mock(return_value=mock_new_ws)
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch(
+                "xlmanage.worksheet_manager._find_worksheet"
+            ) as mock_find:
+                mock_find.return_value = None
+
+                info = manager.create("LastSheet")
+
+                # Verify worksheet was created at index 4 (after 3)
+                assert info.index == 4
+                assert info.name == "LastSheet"
+
+                # Verify Add was called with After=last_ws
+                mock_wb.Worksheets.Add.assert_called_once_with(
+                    After=mock_last_ws
+                )
+
+    def test_create_preserves_worksheet_info(self):
+        """Test that create returns accurate WorksheetInfo."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_wb.Worksheets.Count = 1
+        mock_last_ws = Mock()
+        mock_wb.Worksheets = Mock(return_value=mock_last_ws)
+
+        # Mock new worksheet with specific properties
+        mock_new_ws = Mock()
+        mock_new_ws.Name = "TestSheet"
+        mock_new_ws.Index = 2
+        mock_new_ws.Visible = True
+
+        # Mock UsedRange with data
+        mock_used_range = Mock()
+        mock_used_range.Rows.Count = 50
+        mock_used_range.Columns.Count = 5
+        mock_new_ws.UsedRange = mock_used_range
+
+        mock_wb.Worksheets.Add = Mock(return_value=mock_new_ws)
+
+        manager = WorksheetManager(mock_excel_mgr)
+
+        with patch(
+            "xlmanage.worksheet_manager._resolve_workbook"
+        ) as mock_resolve:
+            mock_resolve.return_value = mock_wb
+
+            with patch(
+                "xlmanage.worksheet_manager._find_worksheet"
+            ) as mock_find:
+                mock_find.return_value = None
+
+                info = manager.create("TestSheet")
+
+                # Verify all fields are correct
+                assert info.name == "TestSheet"
+                assert info.index == 2
+                assert info.visible is True
+                assert info.rows_used == 50
+                assert info.columns_used == 5
+                assert isinstance(info, WorksheetInfo)

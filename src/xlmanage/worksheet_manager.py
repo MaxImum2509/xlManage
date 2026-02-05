@@ -1,5 +1,5 @@
 """
-Worksheet information and validation for xlmanage.
+Worksheet management for xlmanage.
 
 This file is part of xlManage.
 
@@ -197,3 +197,133 @@ def _find_worksheet(wb: CDispatch, name: str) -> CDispatch | None:
             continue
 
     return None
+
+
+class WorksheetManager:
+    """Manager for Excel worksheet CRUD operations.
+
+    This class provides methods to create, delete, list, and copy
+    worksheets. It depends on ExcelManager for COM access.
+
+    Note:
+        The ExcelManager instance must be started before using this manager.
+    """
+
+    def __init__(self, excel_manager):
+        """Initialize worksheet manager.
+
+        Args:
+            excel_manager: An ExcelManager instance (must be started)
+
+        Example:
+            >>> with ExcelManager() as excel_mgr:
+            ...     ws_mgr = WorksheetManager(excel_mgr)
+            ...     info = ws_mgr.create("NewSheet")
+        """
+        self._mgr = excel_manager
+
+    def _get_worksheet_info(self, ws: CDispatch) -> WorksheetInfo:
+        """Extract information from a worksheet COM object.
+
+        Args:
+            ws: Worksheet COM object
+
+        Returns:
+            WorksheetInfo with worksheet details
+
+        Note:
+            If UsedRange fails (empty sheet), defaults to 0 rows/columns.
+        """
+        try:
+            # Get used range to count rows/columns
+            used_range = ws.UsedRange
+            if used_range is not None:
+                rows_used = used_range.Rows.Count
+                columns_used = used_range.Columns.Count
+            else:
+                rows_used = 0
+                columns_used = 0
+        except Exception:
+            # If UsedRange fails (empty sheet), default to 0
+            rows_used = 0
+            columns_used = 0
+
+        return WorksheetInfo(
+            name=ws.Name,
+            index=ws.Index,
+            visible=ws.Visible,
+            rows_used=rows_used,
+            columns_used=columns_used,
+        )
+
+    def create(self, name: str, workbook: Path | None = None) -> WorksheetInfo:
+        """Create a new worksheet.
+
+        Creates a new worksheet with the specified name in the target workbook.
+        The worksheet is added at the end of the workbook.
+
+        Args:
+            name: Name for the new worksheet (must follow Excel naming rules)
+            workbook: Optional path to target workbook.
+                      If None, uses the active workbook.
+
+        Returns:
+            WorksheetInfo with details about the created worksheet
+
+        Raises:
+            WorksheetNameError: If the name is invalid
+            WorksheetAlreadyExistsError: If a worksheet with this name already exists
+            ExcelConnectionError: If COM connection fails
+            WorkbookNotFoundError: If the specified workbook is not open
+
+        Examples:
+            >>> # Create in active workbook
+            >>> manager = WorksheetManager(excel_mgr)
+            >>> info = manager.create("Summary")
+            >>> print(f"Created: {info.name} at index {info.index}")
+
+            >>> # Create in specific workbook
+            >>> info = manager.create("Data", Path("C:/work/report.xlsx"))
+
+        Note:
+            The worksheet is created at the end of the workbook.
+            Use move() to reposition it if needed.
+        """
+        # Step 1: Validate the sheet name
+        _validate_sheet_name(name)
+
+        # Step 2: Get Excel app and resolve target workbook
+        app = self._mgr.app
+        wb = _resolve_workbook(app, workbook)
+
+        # Step 3: Check if worksheet already exists
+        existing = _find_worksheet(wb, name)
+        if existing is not None:
+            from .exceptions import WorksheetAlreadyExistsError
+
+            raise WorksheetAlreadyExistsError(name, wb.Name)
+
+        # Step 4: Create the worksheet at the end
+        try:
+            # Get the last worksheet
+            last_ws = wb.Worksheets(wb.Worksheets.Count)
+
+            # Add new worksheet after the last one
+            ws = wb.Worksheets.Add(After=last_ws)
+
+            # Set the name
+            ws.Name = name
+
+            # Step 5: Return WorksheetInfo
+            return self._get_worksheet_info(ws)
+
+        except Exception as e:
+            from .exceptions import ExcelConnectionError
+
+            if hasattr(e, "hresult"):
+                raise ExcelConnectionError(
+                    getattr(e, "hresult"),
+                    f"Failed to create worksheet: {str(e)}",
+                ) from e
+            else:
+                raise
