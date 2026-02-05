@@ -32,8 +32,13 @@ try:
         WorkbookAlreadyOpenError,
         WorkbookNotFoundError,
         WorkbookSaveError,
+        WorksheetAlreadyExistsError,
+        WorksheetDeleteError,
+        WorksheetNameError,
+        WorksheetNotFoundError,
     )
     from .workbook_manager import WorkbookManager
+    from .worksheet_manager import WorksheetManager
 except ImportError:
     from xlmanage.excel_manager import ExcelManager
     from xlmanage.exceptions import (
@@ -42,10 +47,19 @@ except ImportError:
         WorkbookAlreadyOpenError,
         WorkbookNotFoundError,
         WorkbookSaveError,
+        WorksheetAlreadyExistsError,
+        WorksheetDeleteError,
+        WorksheetNameError,
+        WorksheetNotFoundError,
     )
     from xlmanage.workbook_manager import WorkbookManager
+    from xlmanage.worksheet_manager import WorksheetManager
 
-app = typer.Typer(name="xlmanage", help="Excel automation CLI tool")
+app = typer.Typer(
+    name="xlmanage",
+    help="Excel automation CLI tool",
+    no_args_is_help=True,
+)
 console = Console()
 
 
@@ -627,6 +641,343 @@ def workbook_list():
 
             console.print(table)
 
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+worksheet_app = typer.Typer(help="Manage Excel worksheets")
+app.add_typer(worksheet_app, name="worksheet")
+
+
+@worksheet_app.command("create")
+def worksheet_create(
+    name: str = typer.Argument(..., help="Name of the new worksheet"),
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+):
+    """Create a new worksheet.
+
+    Creates a new worksheet in the specified workbook.
+    If no workbook is specified, creates it in the active workbook.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            ws_mgr = WorksheetManager(excel_mgr)
+            info = ws_mgr.create(name, workbook=workbook)
+
+            workbook_info = (
+                f"Classeur : {workbook.name}" if workbook else "Classeur actif"
+            )
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Feuille créée avec succès\n\n"
+                    f"[bold]Nom :[/bold] {info.name}\n"
+                    f"[bold]Position :[/bold] {info.index}\n"
+                    f"[bold]{workbook_info}[/bold]\n"
+                    f"[bold]Visible :[/bold] {'Oui' if info.visible else 'Non'}",
+                    title="Feuille créée",
+                    border_style="green",
+                )
+            )
+
+    except WorksheetNameError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Nom de feuille invalide\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Raison :[/bold] {e.reason}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorksheetAlreadyExistsError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Feuille déjà existante\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@worksheet_app.command("delete")
+def worksheet_delete(
+    name: str = typer.Argument(..., help="Name of the worksheet to delete"),
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force deletion without confirmation",
+    ),
+):
+    """Delete a worksheet.
+
+    Deletes the specified worksheet from the workbook.
+    By default, asks for confirmation before deleting.
+    """
+    try:
+        # Confirmation (sauf si --force)
+        if not force:
+            workbook_info = (
+                f"dans le classeur '{workbook.name}'"
+                if workbook
+                else "dans le classeur actif"
+            )
+            console.print(
+                f"\n[yellow]Attention :[/yellow] Vous allez supprimer la feuille "
+                f"'{name}' {workbook_info}"
+            )
+            confirm = typer.confirm("Êtes-vous sûr de vouloir continuer ?")
+            if not confirm:
+                console.print("[yellow]Opération annulée[/yellow]")
+                return
+
+        with ExcelManager() as excel_mgr:
+            ws_mgr = WorksheetManager(excel_mgr)
+            ws_mgr.delete(name, workbook=workbook)
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Feuille supprimée avec succès\n\n"
+                    f"[bold]Nom :[/bold] {name}",
+                    title="Succès",
+                    border_style="green",
+                )
+            )
+
+    except WorksheetNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Feuille introuvable\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorksheetDeleteError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Suppression impossible\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Raison :[/bold] {e.reason}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@worksheet_app.command("list")
+def worksheet_list(
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+):
+    """List all worksheets in a workbook.
+
+    Displays information about all worksheets including position,
+    visibility, and data dimensions.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            ws_mgr = WorksheetManager(excel_mgr)
+            worksheets = ws_mgr.list(workbook=workbook)
+
+            if not worksheets:
+                console.print(
+                    Panel.fit(
+                        "[yellow]ℹ[/yellow] Aucune feuille trouvée",
+                        title="Feuilles",
+                        border_style="yellow",
+                    )
+                )
+                return
+
+            workbook_info = f" - {workbook.name}" if workbook else " - Classeur actif"
+            title = f"Feuilles du classeur ({len(worksheets)} trouvée(s))"
+            table = Table(title=f"{title}{workbook_info}")
+            table.add_column("Position", justify="right", style="cyan")
+            table.add_column("Nom", style="yellow")
+            table.add_column("Visible", style="green")
+            table.add_column("Lignes", justify="right", style="magenta")
+            table.add_column("Colonnes", justify="right", style="magenta")
+
+            for info in worksheets:
+                visible_icon = "✓" if info.visible else "✗"
+                visible_color = "green" if info.visible else "red"
+
+                table.add_row(
+                    str(info.index),
+                    info.name,
+                    f"[{visible_color}]{visible_icon}[/{visible_color}]",
+                    str(info.rows_used),
+                    str(info.columns_used),
+                )
+
+            console.print(table)
+
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@worksheet_app.command("copy")
+def worksheet_copy(
+    source: str = typer.Argument(..., help="Name of the source worksheet"),
+    destination: str = typer.Argument(..., help="Name for the copy"),
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+):
+    """Copy a worksheet.
+
+    Creates a copy of the source worksheet with a new name.
+    The copy is placed immediately after the source worksheet.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            ws_mgr = WorksheetManager(excel_mgr)
+            info = ws_mgr.copy(source, destination, workbook=workbook)
+
+            workbook_info = (
+                f"Classeur : {workbook.name}" if workbook else "Classeur actif"
+            )
+
+            console.print(
+                Panel.fit(
+                    f"[green]✓[/green] Feuille copiée avec succès\n\n"
+                    f"[bold]Source :[/bold] {source}\n"
+                    f"[bold]Destination :[/bold] {info.name}\n"
+                    f"[bold]Position :[/bold] {info.index}\n"
+                    f"[bold]{workbook_info}[/bold]",
+                    title="Feuille copiée",
+                    border_style="green",
+                )
+            )
+
+    except WorksheetNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Feuille source introuvable\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorksheetNameError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Nom de destination invalide\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Raison :[/bold] {e.reason}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorksheetAlreadyExistsError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Feuille de destination déjà existante\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
     except ExcelManageError as e:
         console.print(
             Panel.fit(

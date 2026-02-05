@@ -26,6 +26,7 @@ from xlmanage.cli import app
 from xlmanage.excel_manager import InstanceInfo
 from xlmanage.exceptions import ExcelConnectionError, ExcelManageError
 from xlmanage.workbook_manager import WorkbookInfo
+from xlmanage.worksheet_manager import WorksheetInfo
 
 runner = CliRunner()
 
@@ -723,3 +724,407 @@ class TestWorkbookCommands:
         assert "file1.xlsx" in result.stdout
         assert "file2.xlsx" in result.stdout
         assert "Classeurs ouverts" in result.stdout
+
+
+class TestWorksheetCommands:
+    """Tests for worksheet CLI commands."""
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_create_command(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet create command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_info = WorksheetInfo(
+            name="NewSheet",
+            index=2,
+            visible=True,
+            rows_used=0,
+            columns_used=0,
+        )
+        mock_ws_mgr.create.return_value = mock_info
+
+        result = runner.invoke(app, ["worksheet", "create", "NewSheet"])
+
+        assert result.exit_code == 0
+        assert "NewSheet" in result.stdout
+        assert "créée avec succès" in result.stdout
+        mock_ws_mgr.create.assert_called_once_with("NewSheet", workbook=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_create_with_workbook(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet create command with --workbook option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_info = WorksheetInfo(
+            name="NewSheet",
+            index=2,
+            visible=True,
+            rows_used=0,
+            columns_used=0,
+        )
+        mock_ws_mgr.create.return_value = mock_info
+
+        result = runner.invoke(
+            app, ["worksheet", "create", "NewSheet", "--workbook", str(test_file)]
+        )
+
+        assert result.exit_code == 0
+        assert "NewSheet" in result.stdout
+        mock_ws_mgr.create.assert_called_once_with("NewSheet", workbook=test_file)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_create_name_error(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet create command with invalid name."""
+        from xlmanage.exceptions import WorksheetNameError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.create.side_effect = WorksheetNameError(
+            "Invalid/Name", "contains forbidden character '/'"
+        )
+
+        result = runner.invoke(app, ["worksheet", "create", "Invalid/Name"])
+
+        assert result.exit_code == 1
+        assert "Nom de feuille invalide" in result.stdout
+        assert "Invalid/Name" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_create_already_exists(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet create command when worksheet already exists."""
+        from xlmanage.exceptions import WorksheetAlreadyExistsError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.create.side_effect = WorksheetAlreadyExistsError(
+            "Sheet1", "test.xlsx"
+        )
+
+        result = runner.invoke(app, ["worksheet", "create", "Sheet1"])
+
+        assert result.exit_code == 1
+        assert "déjà existante" in result.stdout
+        assert "Sheet1" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_delete_command(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet delete command with --force."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        result = runner.invoke(app, ["worksheet", "delete", "OldSheet", "--force"])
+
+        assert result.exit_code == 0
+        assert "supprimée avec succès" in result.stdout
+        assert "OldSheet" in result.stdout
+        mock_ws_mgr.delete.assert_called_once_with("OldSheet", workbook=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_delete_with_confirmation_yes(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet delete command with user confirmation (yes)."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        result = runner.invoke(app, ["worksheet", "delete", "OldSheet"], input="y\n")
+
+        assert result.exit_code == 0
+        assert "supprimée avec succès" in result.stdout
+        mock_ws_mgr.delete.assert_called_once_with("OldSheet", workbook=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_delete_with_confirmation_no(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet delete command with user confirmation (no)."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        result = runner.invoke(app, ["worksheet", "delete", "OldSheet"], input="n\n")
+
+        assert result.exit_code == 0
+        assert "annulée" in result.stdout
+        mock_ws_mgr.delete.assert_not_called()
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_delete_not_found(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet delete command when worksheet not found."""
+        from xlmanage.exceptions import WorksheetNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.delete.side_effect = WorksheetNotFoundError(
+            "MissingSheet", "test.xlsx"
+        )
+
+        result = runner.invoke(app, ["worksheet", "delete", "MissingSheet", "--force"])
+
+        assert result.exit_code == 1
+        assert "Feuille introuvable" in result.stdout
+        assert "MissingSheet" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_delete_error(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet delete command with delete error."""
+        from xlmanage.exceptions import WorksheetDeleteError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.delete.side_effect = WorksheetDeleteError(
+            "LastSheet", "cannot delete the last visible worksheet"
+        )
+
+        result = runner.invoke(app, ["worksheet", "delete", "LastSheet", "--force"])
+
+        assert result.exit_code == 1
+        assert "Suppression impossible" in result.stdout
+        assert "LastSheet" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_list_command_empty(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet list command with no worksheets."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.list.return_value = []
+
+        result = runner.invoke(app, ["worksheet", "list"])
+
+        assert result.exit_code == 0
+        assert "Aucune feuille trouvée" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_list_command(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet list command with worksheets."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.list.return_value = [
+            WorksheetInfo(
+                name="Sheet1",
+                index=1,
+                visible=True,
+                rows_used=10,
+                columns_used=5,
+            ),
+            WorksheetInfo(
+                name="Sheet2",
+                index=2,
+                visible=False,
+                rows_used=0,
+                columns_used=0,
+            ),
+            WorksheetInfo(
+                name="Data",
+                index=3,
+                visible=True,
+                rows_used=100,
+                columns_used=20,
+            ),
+        ]
+
+        result = runner.invoke(app, ["worksheet", "list"])
+
+        assert result.exit_code == 0
+        assert "Sheet1" in result.stdout
+        assert "Sheet2" in result.stdout
+        assert "Data" in result.stdout
+        assert "3 trouvée(s)" in result.stdout
+        assert "Feuilles du classeur" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_list_with_workbook(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet list command with --workbook option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_ws_mgr.list.return_value = [
+            WorksheetInfo(
+                name="Sheet1",
+                index=1,
+                visible=True,
+                rows_used=10,
+                columns_used=5,
+            ),
+        ]
+
+        result = runner.invoke(app, ["worksheet", "list", "--workbook", str(test_file)])
+
+        assert result.exit_code == 0
+        assert "test.xlsx" in result.stdout
+        mock_ws_mgr.list.assert_called_once_with(workbook=test_file)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_copy_command(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet copy command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_info = WorksheetInfo(
+            name="Sheet1_Copy",
+            index=2,
+            visible=True,
+            rows_used=10,
+            columns_used=5,
+        )
+        mock_ws_mgr.copy.return_value = mock_info
+
+        result = runner.invoke(app, ["worksheet", "copy", "Sheet1", "Sheet1_Copy"])
+
+        assert result.exit_code == 0
+        assert "copiée avec succès" in result.stdout
+        assert "Sheet1" in result.stdout
+        assert "Sheet1_Copy" in result.stdout
+        mock_ws_mgr.copy.assert_called_once_with("Sheet1", "Sheet1_Copy", workbook=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_copy_with_workbook(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet copy command with --workbook option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_info = WorksheetInfo(
+            name="Copy",
+            index=2,
+            visible=True,
+            rows_used=0,
+            columns_used=0,
+        )
+        mock_ws_mgr.copy.return_value = mock_info
+
+        result = runner.invoke(
+            app,
+            ["worksheet", "copy", "Source", "Copy", "--workbook", str(test_file)],
+        )
+
+        assert result.exit_code == 0
+        assert "copiée avec succès" in result.stdout
+        mock_ws_mgr.copy.assert_called_once_with("Source", "Copy", workbook=test_file)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_copy_source_not_found(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet copy command when source not found."""
+        from xlmanage.exceptions import WorksheetNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.copy.side_effect = WorksheetNotFoundError(
+            "MissingSource", "test.xlsx"
+        )
+
+        result = runner.invoke(app, ["worksheet", "copy", "MissingSource", "Copy"])
+
+        assert result.exit_code == 1
+        assert "Feuille source introuvable" in result.stdout
+        assert "MissingSource" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_copy_destination_exists(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet copy command when destination already exists."""
+        from xlmanage.exceptions import WorksheetAlreadyExistsError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.copy.side_effect = WorksheetAlreadyExistsError(
+            "ExistingSheet", "test.xlsx"
+        )
+
+        result = runner.invoke(app, ["worksheet", "copy", "Source", "ExistingSheet"])
+
+        assert result.exit_code == 1
+        assert "déjà existante" in result.stdout
+        assert "ExistingSheet" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorksheetManager")
+    def test_worksheet_copy_invalid_destination_name(self, mock_ws_class, mock_mgr_class):
+        """Test worksheet copy command with invalid destination name."""
+        from xlmanage.exceptions import WorksheetNameError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_ws_mgr = Mock()
+        mock_ws_class.return_value = mock_ws_mgr
+
+        mock_ws_mgr.copy.side_effect = WorksheetNameError(
+            "Invalid/Name", "contains forbidden character '/'"
+        )
+
+        result = runner.invoke(app, ["worksheet", "copy", "Source", "Invalid/Name"])
+
+        assert result.exit_code == 1
+        assert "Nom de destination invalide" in result.stdout
+        assert "Invalid/Name" in result.stdout
