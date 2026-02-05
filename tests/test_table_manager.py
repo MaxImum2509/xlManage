@@ -18,13 +18,18 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
-from xlmanage.exceptions import TableNameError, TableRangeError
+from xlmanage.exceptions import (
+    TableNameError,
+    TableRangeError,
+    TableAlreadyExistsError,
+)
 from xlmanage.table_manager import (
     TABLE_NAME_MAX_LENGTH,
     TABLE_NAME_PATTERN,
     TableInfo,
+    TableManager,
     _find_table,
     _validate_range,
     _validate_table_name,
@@ -418,3 +423,159 @@ class TestValidateRange:
 
         for range_ref in valid_ranges:
             _validate_range(range_ref)  # Should not raise
+
+
+class TestTableManager:
+    """Tests for TableManager class."""
+
+    def test_table_manager_initialization(self):
+        """Test TableManager initialization."""
+        mock_excel_mgr = Mock()
+        manager = TableManager(mock_excel_mgr)
+
+        assert manager._mgr == mock_excel_mgr
+
+    def test_get_table_info_with_data(self):
+        """Test _get_table_info with table containing data."""
+        mock_excel_mgr = Mock()
+        manager = TableManager(mock_excel_mgr)
+
+        # Create mock table
+        mock_table = Mock()
+        mock_table.Name = "tbl_Sales"
+        mock_table.Range.Address = "$A$1:$D$100"
+        mock_table.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table.DataBodyRange.Rows.Count = 99
+
+        # Create mock worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+
+        info = manager._get_table_info(mock_table, mock_ws)
+
+        assert info.name == "tbl_Sales"
+        assert info.worksheet_name == "Data"
+        assert info.range_ref == "$A$1:$D$100"
+        assert info.header_row_range == "$A$1:$D$1"
+        assert info.rows_count == 99
+
+    def test_get_table_info_empty_table(self):
+        """Test _get_table_info with empty table (no data rows)."""
+        mock_excel_mgr = Mock()
+        manager = TableManager(mock_excel_mgr)
+
+        # Create mock table with no data
+        mock_table = Mock()
+        mock_table.Name = "tbl_Empty"
+        mock_table.Range.Address = "$A$1:$D$1"
+        mock_table.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table.DataBodyRange = None  # No data rows
+
+        mock_ws = Mock()
+        mock_ws.Name = "Sheet1"
+
+        info = manager._get_table_info(mock_table, mock_ws)
+
+        assert info.name == "tbl_Empty"
+        assert info.rows_count == 0
+
+
+class TestTableManagerCreate:
+    """Tests for TableManager.create() method."""
+
+    def test_create_in_active_worksheet(self):
+        """Test creating table in active worksheet."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock active workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock active worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+        mock_wb.ActiveSheet = mock_ws
+
+        # Mock Range and table creation
+        mock_range = Mock()
+        mock_ws.Range.return_value = mock_range
+
+        mock_table = Mock()
+        mock_table.Name = "tbl_Sales"
+        mock_table.Range.Address = "$A$1:$D$100"
+        mock_table.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table.DataBodyRange.Rows.Count = 99
+
+        # Mock ListObjects with Add method
+        mock_list_objects = Mock()
+        mock_list_objects.Add.return_value = mock_table
+        mock_list_objects.__iter__ = Mock(return_value=iter([]))  # Empty iterator
+        mock_ws.ListObjects = mock_list_objects
+
+        # Mock Worksheets with single worksheet (no existing tables)
+        mock_wb.Worksheets = [mock_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        info = manager.create("tbl_Sales", "A1:D100")
+
+        assert info.name == "tbl_Sales"
+        assert info.worksheet_name == "Data"
+        assert info.range_ref == "$A$1:$D$100"
+        assert info.rows_count == 99
+
+        # Verify Add was called with correct parameters
+        mock_list_objects.Add.assert_called_once()
+        call_args = mock_list_objects.Add.call_args
+        assert call_args[1]["SourceType"] == 1
+        assert call_args[1]["XlListObjectHasHeaders"] == 1
+
+    def test_create_invalid_table_name(self):
+        """Test create with invalid table name."""
+        mock_excel_mgr = Mock()
+        manager = TableManager(mock_excel_mgr)
+
+        with pytest.raises(TableNameError):
+            manager.create("1InvalidName", "A1:D10")
+
+    def test_create_invalid_range(self):
+        """Test create with invalid range."""
+        mock_excel_mgr = Mock()
+        manager = TableManager(mock_excel_mgr)
+
+        with pytest.raises(TableRangeError):
+            manager.create("tbl_Valid", "A1")  # Missing colon
+
+    def test_create_duplicate_name(self):
+        """Test create with duplicate table name."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+        mock_wb.ActiveSheet = mock_ws
+
+        # Mock existing table with same name
+        mock_existing_table = Mock()
+        mock_existing_table.Name = "tbl_Sales"
+
+        mock_sheet = Mock()
+        mock_sheet.ListObjects = [mock_existing_table]
+        mock_wb.Worksheets = [mock_sheet]
+
+        manager = TableManager(mock_excel_mgr)
+
+        with pytest.raises(TableAlreadyExistsError) as exc_info:
+            manager.create("tbl_Sales", "A1:D10")
+
+        assert exc_info.value.name == "tbl_Sales"
+        assert exc_info.value.workbook_name == "Test.xlsx"

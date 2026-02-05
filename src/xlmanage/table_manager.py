@@ -19,12 +19,16 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import Any
 
-from .exceptions import TableNameError, TableRangeError
-
-if TYPE_CHECKING:
+try:
     from win32com.client import CDispatch
+except ImportError:
+    CDispatch = Any
+
+from .exceptions import TableAlreadyExistsError, TableNameError, TableRangeError
+from .worksheet_manager import _find_worksheet, _resolve_workbook
 
 # Excel table name constraints
 TABLE_NAME_MAX_LENGTH: int = 255
@@ -160,3 +164,105 @@ def _validate_range(range_ref: str) -> None:
     pattern = r"^[A-Z]+\d+:[A-Z]+\d+$|^[rR]\d+[cC]\d+:[rR]\d+[cC]\d+$"
     if not re.match(pattern, clean_range.replace("$", "")):
         raise TableRangeError(range_ref, "invalid range syntax")
+
+
+class TableManager:
+    """Manager for Excel table (ListObject) CRUD operations.
+
+    This class provides methods to create, delete, and list tables.
+    It depends on ExcelManager for COM access.
+
+    Note:
+        The ExcelManager instance must be started before using this manager.
+    """
+
+    def __init__(self, excel_manager):
+        """Initialize table manager.
+
+        Args:
+            excel_manager: An ExcelManager instance (must be started)
+
+        Example:
+            >>> with ExcelManager() as excel_mgr:
+            ...     table_mgr = TableManager(excel_mgr)
+            ...     info = table_mgr.create("tbl_Sales", "A1:D100", worksheet="Data")
+        """
+        self._mgr = excel_manager
+
+    def _get_table_info(self, table: "CDispatch", ws: "CDispatch") -> TableInfo:
+        """Extract information from a table COM object.
+
+        Args:
+            table: Table COM object
+            ws: Worksheet COM object
+
+        Returns:
+            TableInfo with table details
+        """
+        return TableInfo(
+            name=table.Name,
+            worksheet_name=ws.Name,
+            range_ref=table.Range.Address,
+            header_row_range=table.HeaderRowRange.Address,
+            rows_count=table.DataBodyRange.Rows.Count if table.DataBodyRange else 0,
+        )
+
+    def create(
+        self,
+        name: str,
+        range_ref: str,
+        worksheet: str | None = None,
+        workbook: Path | None = None,
+    ) -> TableInfo:
+        """Create a new table in a worksheet.
+
+        Args:
+            name: Name for the new table (e.g., "tbl_Sales")
+            range_ref: Range reference (e.g., "A1:D100")
+            worksheet: Worksheet name (if None, uses active worksheet)
+            workbook: Workbook path (if None, uses active workbook)
+
+        Returns:
+            TableInfo with details of the created table
+
+        Raises:
+            TableNameError: If the table name is invalid
+            TableRangeError: If the range is invalid
+            TableAlreadyExistsError: If a table with this name already exists
+            WorksheetNotFoundError: If the worksheet doesn't exist
+            WorkbookNotFoundError: If the workbook is not open
+
+        Examples:
+            >>> manager = TableManager(excel_mgr)
+            >>> info = manager.create("tbl_Sales", "A1:D100", worksheet="Data")
+            >>> print(f"{info.name}: {info.rows_count} rows")
+        """
+        # Validate table name
+        _validate_table_name(name)
+
+        # Validate range
+        _validate_range(range_ref)
+
+        # Resolve workbook and worksheet
+        wb = _resolve_workbook(self._mgr.app, workbook)
+
+        if worksheet is None:
+            ws = wb.ActiveSheet
+        else:
+            ws = _find_worksheet(wb, worksheet)
+
+        # Check if table name already exists in workbook
+        for sheet in wb.Worksheets:
+            for existing_table in sheet.ListObjects:
+                if existing_table.Name == name:
+                    raise TableAlreadyExistsError(name, wb.Name)
+
+        # Create the table
+        table = ws.ListObjects.Add(
+            SourceType=1,  # xlSrcRange
+            Source=ws.Range(range_ref),
+            XlListObjectHasHeaders=1,  # xlYes
+        )
+        table.Name = name
+
+        return self._get_table_info(table, ws)

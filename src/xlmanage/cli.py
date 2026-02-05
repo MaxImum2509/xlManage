@@ -94,18 +94,22 @@ def start(
         manager = ExcelManager(visible=visible)
         info = manager.start(new=new)
 
+        # Create an empty workbook to keep Excel alive
+        # Excel will close automatically if no workbooks are open
+        manager.app.Workbooks.Add()
+
         # Display success message
         mode = "new" if new else "existing"
         visibility = "visible" if visible else "hidden"
 
         console.print(
             Panel.fit(
-                f"[green]✓[/green] Excel instance started successfully\n\n"
+                f"[green]OK[/green] Excel instance started successfully\n\n"
                 f"[bold]Mode:[/bold] {mode}\n"
                 f"[bold]Visibility:[/bold] {visibility}\n"
                 f"[bold]Process ID:[/bold] {info.pid}\n"
                 f"[bold]Window Handle:[/bold] {info.hwnd}\n"
-                f"[bold]Workbooks:[/bold] {info.workbooks_count}",
+                f"[bold]Workbooks:[/bold] {info.workbooks_count + 1}",
                 title="Excel Instance Started",
                 border_style="green",
             )
@@ -114,7 +118,7 @@ def start(
     except ExcelConnectionError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Failed to start Excel instance\n\n"
+                f"[red]X[/red] Failed to start Excel instance\n\n"
                 f"[bold]Error:[/bold] {e}",
                 title="Connection Error",
                 border_style="red",
@@ -124,7 +128,7 @@ def start(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
                 title="Error",
                 border_style="red",
             )
@@ -133,7 +137,7 @@ def start(
     except Exception as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
                 title="Unexpected Error",
                 border_style="red",
             )
@@ -178,7 +182,7 @@ def stop(
             if not instances:
                 console.print(
                     Panel.fit(
-                        "[yellow]ℹ[/yellow] No running Excel instances found",
+                        "[yellow]i[/yellow] No running Excel instances found",
                         title="Information",
                         border_style="yellow",
                     )
@@ -210,7 +214,7 @@ def stop(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Stopped {stopped_count} Excel instance(s)",
+                    f"[green]OK[/green] Stopped {stopped_count} Excel instance(s)",
                     title="Success",
                     border_style="green",
                 )
@@ -229,7 +233,7 @@ def stop(
             manager.stop(save=not no_save)
             console.print(
                 Panel.fit(
-                    "[green]✓[/green] Excel instance stopped successfully",
+                    "[green]OK[/green] Excel instance stopped successfully",
                     title="Success",
                     border_style="green",
                 )
@@ -238,7 +242,7 @@ def stop(
     except ExcelConnectionError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Failed to stop Excel instance\n\n"
+                f"[red]X[/red] Failed to stop Excel instance\n\n"
                 f"[bold]Error:[/bold] {e}",
                 title="Connection Error",
                 border_style="red",
@@ -248,7 +252,7 @@ def stop(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
                 title="Error",
                 border_style="red",
             )
@@ -257,7 +261,7 @@ def stop(
     except Exception as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
                 title="Unexpected Error",
                 border_style="red",
             )
@@ -279,7 +283,7 @@ def status():
         if not instances:
             console.print(
                 Panel.fit(
-                    "[yellow]ℹ[/yellow] No running Excel instances found",
+                    "[yellow]i[/yellow] No running Excel instances found",
                     title="Excel Status",
                     border_style="yellow",
                 )
@@ -294,13 +298,13 @@ def status():
         table.add_column("Workbooks", style="yellow", justify="right")
 
         for info in instances:
-            visible_icon = "✓" if info.visible else "✗"
+            visible_text = "Yes" if info.visible else "No"
             visible_color = "green" if info.visible else "red"
 
             table.add_row(
                 str(info.pid),
                 str(info.hwnd),
-                f"[{visible_color}]{visible_icon}[/{visible_color}]",
+                f"[{visible_color}]{visible_text}[/{visible_color}]",
                 str(info.workbooks_count),
             )
 
@@ -309,7 +313,7 @@ def status():
     except ExcelConnectionError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Failed to get Excel status\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Failed to get Excel status\n\n[bold]Error:[/bold] {e}",
                 title="Connection Error",
                 border_style="red",
             )
@@ -318,7 +322,7 @@ def status():
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
                 title="Error",
                 border_style="red",
             )
@@ -327,7 +331,7 @@ def status():
     except Exception as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
+                f"[red]X[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
                 title="Unexpected Error",
                 border_style="red",
             )
@@ -364,7 +368,7 @@ def workbook_open(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Classeur ouvert avec succès\n\n"
+                    f"[green]OK[/green] Classeur ouvert avec succès\n\n"
                     f"[bold]Nom :[/bold] {info.name}\n"
                     f"[bold]Chemin :[/bold] {info.full_path}\n"
                     f"[bold]Mode :[/bold] {mode}\n"
@@ -378,7 +382,7 @@ def workbook_open(
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Fichier introuvable\n\n[bold]Chemin :[/bold] {e.path}",
+                f"[red]X[/red] Fichier introuvable\n\n[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
                 border_style="red",
             )
@@ -387,7 +391,7 @@ def workbook_open(
     except WorkbookAlreadyOpenError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur déjà ouvert\n\n"
+                f"[red]X[/red] Classeur déjà ouvert\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
@@ -398,7 +402,7 @@ def workbook_open(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -430,7 +434,7 @@ def workbook_create(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Classeur créé avec succès\n\n"
+                    f"[green]OK[/green] Classeur créé avec succès\n\n"
                     f"[bold]Nom :[/bold] {info.name}\n"
                     f"[bold]Chemin :[/bold] {info.full_path}\n"
                     f"[bold]Type :[/bold] {template_info}\n"
@@ -443,7 +447,7 @@ def workbook_create(
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Template introuvable\n\n[bold]Chemin :[/bold] {e.path}",
+                f"[red]X[/red] Template introuvable\n\n[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
                 border_style="red",
             )
@@ -452,7 +456,7 @@ def workbook_create(
     except WorkbookSaveError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Échec de sauvegarde\n\n"
+                f"[red]X[/red] Échec de sauvegarde\n\n"
                 f"[bold]Chemin :[/bold] {e.path}\n"
                 f"[bold]Raison :[/bold] {e.message}",
                 title="Erreur",
@@ -463,7 +467,7 @@ def workbook_create(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -500,7 +504,7 @@ def workbook_close(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Classeur fermé {save_info}\n\n"
+                    f"[green]OK[/green] Classeur fermé {save_info}\n\n"
                     f"[bold]Fichier :[/bold] {path.name}",
                     title="Succès",
                     border_style="green",
@@ -510,7 +514,7 @@ def workbook_close(
     except WorkbookNotFoundError:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur non ouvert\n\n"
+                f"[red]X[/red] Classeur non ouvert\n\n"
                 f"[bold]Fichier :[/bold] {path.name}",
                 title="Erreur",
                 border_style="red",
@@ -520,7 +524,7 @@ def workbook_close(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -557,7 +561,7 @@ def workbook_save(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Classeur sauvegardé\n\n"
+                    f"[green]OK[/green] Classeur sauvegardé\n\n"
                     f"[bold]Opération :[/bold] {operation}\n"
                     f"[bold]Fichier :[/bold] {target}",
                     title="Succès",
@@ -568,7 +572,7 @@ def workbook_save(
     except WorkbookNotFoundError:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur non ouvert\n\n"
+                f"[red]X[/red] Classeur non ouvert\n\n"
                 f"[bold]Fichier :[/bold] {path.name}",
                 title="Erreur",
                 border_style="red",
@@ -578,7 +582,7 @@ def workbook_save(
     except WorkbookSaveError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Échec de sauvegarde\n\n"
+                f"[red]X[/red] Échec de sauvegarde\n\n"
                 f"[bold]Chemin :[/bold] {e.path}\n"
                 f"[bold]Raison :[/bold] {e.message}",
                 title="Erreur",
@@ -589,7 +593,7 @@ def workbook_save(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -612,7 +616,7 @@ def workbook_list():
             if not workbooks:
                 console.print(
                     Panel.fit(
-                        "[yellow]ℹ[/yellow] Aucun classeur ouvert",
+                        "[yellow]i[/yellow] Aucun classeur ouvert",
                         title="Classeurs",
                         border_style="yellow",
                     )
@@ -629,14 +633,14 @@ def workbook_list():
                 mode = "R/O" if info.read_only else "R/W"
                 mode_color = "red" if info.read_only else "green"
 
-                saved_icon = "✓" if info.saved else "✗"
+                saved_text = "Oui" if info.saved else "X"
                 saved_color = "green" if info.saved else "yellow"
 
                 table.add_row(
                     info.name,
                     str(info.sheets_count),
                     f"[{mode_color}]{mode}[/{mode_color}]",
-                    f"[{saved_color}]{saved_icon}[/{saved_color}]",
+                    f"[{saved_color}]{saved_text}[/{saved_color}]",
                 )
 
             console.print(table)
@@ -644,7 +648,7 @@ def workbook_list():
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -682,7 +686,7 @@ def worksheet_create(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Feuille créée avec succès\n\n"
+                    f"[green]OK[/green] Feuille créée avec succès\n\n"
                     f"[bold]Nom :[/bold] {info.name}\n"
                     f"[bold]Position :[/bold] {info.index}\n"
                     f"[bold]{workbook_info}[/bold]\n"
@@ -695,7 +699,7 @@ def worksheet_create(
     except WorksheetNameError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Nom de feuille invalide\n\n"
+                f"[red]X[/red] Nom de feuille invalide\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Raison :[/bold] {e.reason}",
                 title="Erreur",
@@ -706,7 +710,7 @@ def worksheet_create(
     except WorksheetAlreadyExistsError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Feuille déjà existante\n\n"
+                f"[red]X[/red] Feuille déjà existante\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Classeur :[/bold] {e.workbook_name}",
                 title="Erreur",
@@ -717,7 +721,7 @@ def worksheet_create(
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
                 border_style="red",
             )
@@ -726,7 +730,7 @@ def worksheet_create(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -778,7 +782,7 @@ def worksheet_delete(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Feuille supprimée avec succès\n\n"
+                    f"[green]OK[/green] Feuille supprimée avec succès\n\n"
                     f"[bold]Nom :[/bold] {name}",
                     title="Succès",
                     border_style="green",
@@ -788,7 +792,7 @@ def worksheet_delete(
     except WorksheetNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Feuille introuvable\n\n"
+                f"[red]X[/red] Feuille introuvable\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Classeur :[/bold] {e.workbook_name}",
                 title="Erreur",
@@ -799,7 +803,7 @@ def worksheet_delete(
     except WorksheetDeleteError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Suppression impossible\n\n"
+                f"[red]X[/red] Suppression impossible\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Raison :[/bold] {e.reason}",
                 title="Erreur",
@@ -810,7 +814,7 @@ def worksheet_delete(
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
                 border_style="red",
             )
@@ -819,7 +823,7 @@ def worksheet_delete(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -849,7 +853,7 @@ def worksheet_list(
             if not worksheets:
                 console.print(
                     Panel.fit(
-                        "[yellow]ℹ[/yellow] Aucune feuille trouvée",
+                        "[yellow]i[/yellow] Aucune feuille trouvée",
                         title="Feuilles",
                         border_style="yellow",
                     )
@@ -866,13 +870,13 @@ def worksheet_list(
             table.add_column("Colonnes", justify="right", style="magenta")
 
             for info in worksheets:
-                visible_icon = "✓" if info.visible else "✗"
+                visible_text = "Oui" if info.visible else "X"
                 visible_color = "green" if info.visible else "red"
 
                 table.add_row(
                     str(info.index),
                     info.name,
-                    f"[{visible_color}]{visible_icon}[/{visible_color}]",
+                    f"[{visible_color}]{visible_text}[/{visible_color}]",
                     str(info.rows_used),
                     str(info.columns_used),
                 )
@@ -882,7 +886,7 @@ def worksheet_list(
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
                 border_style="red",
             )
@@ -891,7 +895,7 @@ def worksheet_list(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )
@@ -926,7 +930,7 @@ def worksheet_copy(
 
             console.print(
                 Panel.fit(
-                    f"[green]✓[/green] Feuille copiée avec succès\n\n"
+                    f"[green]OK[/green] Feuille copiée avec succès\n\n"
                     f"[bold]Source :[/bold] {source}\n"
                     f"[bold]Destination :[/bold] {info.name}\n"
                     f"[bold]Position :[/bold] {info.index}\n"
@@ -939,7 +943,7 @@ def worksheet_copy(
     except WorksheetNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Feuille source introuvable\n\n"
+                f"[red]X[/red] Feuille source introuvable\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Classeur :[/bold] {e.workbook_name}",
                 title="Erreur",
@@ -950,7 +954,7 @@ def worksheet_copy(
     except WorksheetNameError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Nom de destination invalide\n\n"
+                f"[red]X[/red] Nom de destination invalide\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Raison :[/bold] {e.reason}",
                 title="Erreur",
@@ -961,7 +965,7 @@ def worksheet_copy(
     except WorksheetAlreadyExistsError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Feuille de destination déjà existante\n\n"
+                f"[red]X[/red] Feuille de destination déjà existante\n\n"
                 f"[bold]Nom :[/bold] {e.name}\n"
                 f"[bold]Classeur :[/bold] {e.workbook_name}",
                 title="Erreur",
@@ -972,7 +976,7 @@ def worksheet_copy(
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
                 title="Erreur",
                 border_style="red",
             )
@@ -981,7 +985,7 @@ def worksheet_copy(
     except ExcelManageError as e:
         console.print(
             Panel.fit(
-                f"[red]✗[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
                 border_style="red",
             )

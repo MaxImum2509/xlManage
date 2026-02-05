@@ -3,7 +3,7 @@
 _tmp*/
 
 # Ignorer les fichiers de configuration locaux
-*.local
+*.local*
 
 # Ignorer les fichiers de l'environnement virtuel
 .env

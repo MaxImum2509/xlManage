@@ -9,12 +9,15 @@ __all__ = [
     "exceptions",
     "workbook_manager",
     "worksheet_manager",
+    "table_manager",
     "ExcelManager",
     "InstanceInfo",
     "WorkbookManager",
     "WorkbookInfo",
     "WorksheetManager",
     "WorksheetInfo",
+    "TableManager",
+    "TableInfo",
     "ExcelConnectionError",
     "ExcelInstanceNotFoundError",
     "ExcelManageError",
@@ -52,12 +55,16 @@ from .exceptions import (
     WorksheetNameError,
     WorksheetNotFoundError,
 )
+from .table_manager import TableInfo as TableInfoData
+from .table_manager import TableManager
 from .workbook_manager import WorkbookInfo as WorkbookInfoClass
 from .workbook_manager import WorkbookManager
 from .worksheet_manager import WorksheetInfo as WorksheetInfoData
 from .worksheet_manager import WorksheetManager
 
 # Export both for clarity
-# Note: Use WorkbookInfoClass for workbook info, WorksheetInfoData for worksheet info
+# Note: Use WorkbookInfoClass for workbook info, WorksheetInfoData for
+# worksheet info, TableInfoData for table info
 WorkbookInfo = WorkbookInfoClass
 WorksheetInfo = WorksheetInfoData
+TableInfo = TableInfoData
