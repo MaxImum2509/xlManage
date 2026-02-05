@@ -581,6 +581,52 @@ class TestTableManagerCreate:
         assert exc_info.value.name == "tbl_Sales"
         assert exc_info.value.workbook_name == "Test.xlsx"
 
+    def test_create_with_specific_worksheet(self):
+        """Test creating table in a specific worksheet."""
+        from unittest.mock import patch
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock specific worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "CustomSheet"
+
+        # Mock table
+        mock_table = Mock()
+        mock_table.Name = "tbl_Test"
+        mock_table.Range.Address = "$A$1:$D$10"
+        mock_table.HeaderRowRange.Address = "$A$1:$D$1"
+        mock_table.DataBodyRange.Rows.Count = 9
+
+        # Mock Range and ListObjects.Add
+        mock_range = Mock()
+        mock_ws.Range.return_value = mock_range
+        mock_ws.ListObjects.Add.return_value = mock_table
+
+        # No existing tables
+        mock_wb.Worksheets = []
+
+        manager = TableManager(mock_excel_mgr)
+
+        # Mock _resolve_workbook and _find_worksheet
+        with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
+            with patch(
+                "xlmanage.table_manager._find_worksheet", return_value=mock_ws
+            ):
+                info = manager.create("tbl_Test", "A1:D10", worksheet="CustomSheet")
+
+                # Verify the table was created in the specific worksheet
+                assert info.name == "tbl_Test"
+                assert info.worksheet_name == "CustomSheet"
+                assert info.rows_count == 9
+
 
 class TestTableManagerDelete:
     """Tests for TableManager.delete() method."""
@@ -795,3 +841,84 @@ class TestTableManagerList:
         # Should skip corrupted table and return only valid one
         assert len(tables) == 1
         assert tables[0].name == "tbl_Valid"
+
+    def test_list_handles_corrupted_sheet(self):
+        """Test list() continues when a sheet is corrupted."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock good worksheet with table
+        mock_good_ws = Mock()
+        mock_good_ws.Name = "GoodSheet"
+        mock_good_table = Mock()
+        mock_good_table.Name = "tbl_Good"
+        mock_good_table.Range.Address = "$A$1:$B$5"
+        mock_good_table.HeaderRowRange.Address = "$A$1:$B$1"
+        mock_good_table.DataBodyRange.Rows.Count = 4
+        mock_good_ws.ListObjects = [mock_good_table]
+
+        # Mock corrupted sheet that raises exception when accessing ListObjects
+        mock_bad_ws = Mock()
+        mock_bad_ws.Name = "BadSheet"
+        type(mock_bad_ws).ListObjects = property(
+            lambda self: (_ for _ in ()).throw(Exception("Corrupted sheet"))
+        )
+
+        mock_wb.Worksheets = [mock_good_ws, mock_bad_ws]
+
+        manager = TableManager(mock_excel_mgr)
+        tables = manager.list()
+
+        # Should return only the good table, skipping corrupted sheet
+        assert len(tables) == 1
+        assert tables[0].name == "tbl_Good"
+        assert tables[0].worksheet_name == "GoodSheet"
+
+    def test_list_specific_worksheet_with_corrupted_table(self):
+        """Test list() skips corrupted tables in specific worksheet."""
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        # Mock workbook
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        # Mock worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "DataSheet"
+
+        # Good table
+        mock_good_table = Mock()
+        mock_good_table.Name = "tbl_Good"
+        mock_good_table.Range.Address = "$A$1:$C$10"
+        mock_good_table.HeaderRowRange.Address = "$A$1:$C$1"
+        mock_good_table.DataBodyRange.Rows.Count = 9
+
+        # Corrupted table that raises exception when accessing properties
+        mock_bad_table = Mock()
+        type(mock_bad_table).Name = property(
+            lambda self: (_ for _ in ()).throw(Exception("Corrupted table"))
+        )
+
+        mock_ws.ListObjects = [mock_good_table, mock_bad_table]
+
+        # Mock _find_worksheet to return the worksheet
+        from unittest.mock import patch
+
+        manager = TableManager(mock_excel_mgr)
+
+        with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
+            with patch("xlmanage.table_manager._find_worksheet", return_value=mock_ws):
+                tables = manager.list(worksheet="DataSheet")
+
+                # Should return only good table, skip corrupted one
+                assert len(tables) == 1
+                assert tables[0].name == "tbl_Good"

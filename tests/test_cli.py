@@ -556,6 +556,50 @@ class TestWorkbookCommands:
 
     @patch("xlmanage.cli.ExcelManager")
     @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_open_already_open_error(self, mock_wb_class, mock_mgr_class):
+        """Test workbook open command when workbook already open."""
+        from xlmanage.exceptions import WorkbookAlreadyOpenError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_wb_mgr.open.side_effect = WorkbookAlreadyOpenError(
+            "test.xlsx", test_file, "Already open"
+        )
+
+        result = runner.invoke(app, ["workbook", "open", str(test_file)])
+
+        assert result.exit_code == 1
+        assert "déjà ouvert" in result.stdout
+        assert "test.xlsx" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
+    def test_workbook_open_excel_manage_error(self, mock_wb_class, mock_mgr_class):
+        """Test workbook open command with ExcelManageError."""
+        from xlmanage.exceptions import ExcelManageError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_wb_mgr = Mock()
+        mock_wb_class.return_value = mock_wb_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_wb_mgr.open.side_effect = ExcelManageError("Generic error")
+
+        result = runner.invoke(app, ["workbook", "open", str(test_file)])
+
+        assert result.exit_code == 1
+        assert "Erreur" in result.stdout
+        assert "Generic error" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.WorkbookManager")
     def test_workbook_create_command(self, mock_wb_class, mock_mgr_class):
         """Test workbook create command."""
         mock_mgr = Mock()
@@ -1492,3 +1536,148 @@ class TestTableCommands:
         assert "test.xlsx" in result.stdout
         assert "tbl_Test" in result.stdout
         mock_table_mgr.list.assert_called_once_with(worksheet=None, workbook=test_file)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_worksheet_not_found(self, mock_table_class, mock_mgr_class):
+        """Test table create when worksheet doesn't exist."""
+        from xlmanage.exceptions import WorksheetNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.create.side_effect = WorksheetNotFoundError(
+            "MissingSheet", "test.xlsx"
+        )
+
+        result = runner.invoke(
+            app, ["table", "create", "tbl_Test", "A1:D10", "--worksheet", "MissingSheet"]
+        )
+
+        assert result.exit_code == 1
+        assert "Feuille introuvable" in result.stdout
+        assert "MissingSheet" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_workbook_not_found(self, mock_table_class, mock_mgr_class):
+        """Test table create when workbook not found."""
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        test_file = Path("/tmp/missing.xlsx")
+        mock_table_mgr.create.side_effect = WorkbookNotFoundError(test_file, "Not found")
+
+        result = runner.invoke(
+            app, ["table", "create", "tbl_Test", "A1:D10", "--workbook", str(test_file)]
+        )
+
+        assert result.exit_code == 1
+        assert "Classeur non trouvé" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_excel_manage_error(self, mock_table_class, mock_mgr_class):
+        """Test table create with ExcelManageError."""
+        from xlmanage.exceptions import ExcelManageError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.create.side_effect = ExcelManageError("Generic error")
+
+        result = runner.invoke(app, ["table", "create", "tbl_Test", "A1:D10"])
+
+        assert result.exit_code == 1
+        assert "Erreur" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_workbook_not_found(self, mock_table_class, mock_mgr_class):
+        """Test table delete when workbook not found."""
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        test_file = Path("/tmp/missing.xlsx")
+        mock_table_mgr.delete.side_effect = WorkbookNotFoundError(test_file, "Not found")
+
+        result = runner.invoke(
+            app, ["table", "delete", "tbl_Test", "--workbook", str(test_file), "--force"]
+        )
+
+        assert result.exit_code == 1
+        assert "Classeur non trouvé" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_excel_manage_error(self, mock_table_class, mock_mgr_class):
+        """Test table delete with ExcelManageError."""
+        from xlmanage.exceptions import ExcelManageError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.delete.side_effect = ExcelManageError("Delete failed")
+
+        result = runner.invoke(app, ["table", "delete", "tbl_Test", "--force"])
+
+        assert result.exit_code == 1
+        assert "Erreur" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_list_workbook_not_found(self, mock_table_class, mock_mgr_class):
+        """Test table list when workbook not found."""
+        from xlmanage.exceptions import WorkbookNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        test_file = Path("/tmp/missing.xlsx")
+        mock_table_mgr.list.side_effect = WorkbookNotFoundError(test_file, "Not found")
+
+        result = runner.invoke(app, ["table", "list", "--workbook", str(test_file)])
+
+        assert result.exit_code == 1
+        assert "Classeur non trouvé" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_list_excel_manage_error(self, mock_table_class, mock_mgr_class):
+        """Test table list with ExcelManageError."""
+        from xlmanage.exceptions import ExcelManageError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.list.side_effect = ExcelManageError("List failed")
+
+        result = runner.invoke(app, ["table", "list"])
+
+        assert result.exit_code == 1
+        assert "Erreur" in result.stdout
