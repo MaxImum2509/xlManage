@@ -25,6 +25,7 @@ from typer.testing import CliRunner
 from xlmanage.cli import app
 from xlmanage.excel_manager import InstanceInfo
 from xlmanage.exceptions import ExcelConnectionError, ExcelManageError
+from xlmanage.table_manager import TableInfo
 from xlmanage.workbook_manager import WorkbookInfo
 from xlmanage.worksheet_manager import WorksheetInfo
 
@@ -1128,3 +1129,366 @@ class TestWorksheetCommands:
         assert result.exit_code == 1
         assert "Nom de destination invalide" in result.stdout
         assert "Invalid/Name" in result.stdout
+
+
+class TestTableCommands:
+    """Tests for table CLI commands."""
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_command(self, mock_table_class, mock_mgr_class):
+        """Test table create command."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_info = TableInfo(
+            name="tbl_Sales",
+            worksheet_name="Data",
+            range_ref="$A$1:$D$100",
+            header_row_range="$A$1:$D$1",
+            rows_count=99,
+        )
+        mock_table_mgr.create.return_value = mock_info
+
+        result = runner.invoke(app, ["table", "create", "tbl_Sales", "A1:D100"])
+
+        assert result.exit_code == 0
+        assert "tbl_Sales" in result.stdout
+        assert "créée avec succès" in result.stdout
+        assert "99" in result.stdout
+        mock_table_mgr.create.assert_called_once_with(
+            "tbl_Sales", "A1:D100", worksheet=None, workbook=None
+        )
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_with_worksheet(self, mock_table_class, mock_mgr_class):
+        """Test table create command with --worksheet option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_info = TableInfo(
+            name="tbl_Data",
+            worksheet_name="Sheet1",
+            range_ref="$A$1:$E$50",
+            header_row_range="$A$1:$E$1",
+            rows_count=49,
+        )
+        mock_table_mgr.create.return_value = mock_info
+
+        result = runner.invoke(
+            app, ["table", "create", "tbl_Data", "A1:E50", "--worksheet", "Sheet1"]
+        )
+
+        assert result.exit_code == 0
+        assert "tbl_Data" in result.stdout
+        assert "Sheet1" in result.stdout
+        mock_table_mgr.create.assert_called_once_with(
+            "tbl_Data", "A1:E50", worksheet="Sheet1", workbook=None
+        )
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_with_workbook(self, mock_table_class, mock_mgr_class):
+        """Test table create command with --workbook option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_info = TableInfo(
+            name="tbl_Test",
+            worksheet_name="Data",
+            range_ref="$A$1:$C$20",
+            header_row_range="$A$1:$C$1",
+            rows_count=19,
+        )
+        mock_table_mgr.create.return_value = mock_info
+
+        result = runner.invoke(
+            app,
+            ["table", "create", "tbl_Test", "A1:C20", "--workbook", str(test_file)],
+        )
+
+        assert result.exit_code == 0
+        assert "tbl_Test" in result.stdout
+        mock_table_mgr.create.assert_called_once_with(
+            "tbl_Test", "A1:C20", worksheet=None, workbook=test_file
+        )
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_name_error(self, mock_table_class, mock_mgr_class):
+        """Test table create command with invalid name."""
+        from xlmanage.exceptions import TableNameError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.create.side_effect = TableNameError(
+            "1Invalid", "must start with letter or underscore"
+        )
+
+        result = runner.invoke(app, ["table", "create", "1Invalid", "A1:D10"])
+
+        assert result.exit_code == 1
+        assert "Nom de table invalide" in result.stdout
+        assert "1Invalid" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_range_error(self, mock_table_class, mock_mgr_class):
+        """Test table create command with invalid range."""
+        from xlmanage.exceptions import TableRangeError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.create.side_effect = TableRangeError(
+            "A1:Z", "invalid range syntax"
+        )
+
+        result = runner.invoke(app, ["table", "create", "tbl_Test", "A1:Z"])
+
+        assert result.exit_code == 1
+        assert "Plage invalide" in result.stdout
+        assert "A1:Z" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_create_already_exists(self, mock_table_class, mock_mgr_class):
+        """Test table create command when table already exists."""
+        from xlmanage.exceptions import TableAlreadyExistsError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.create.side_effect = TableAlreadyExistsError(
+            "tbl_Sales", "test.xlsx"
+        )
+
+        result = runner.invoke(app, ["table", "create", "tbl_Sales", "A1:D100"])
+
+        assert result.exit_code == 1
+        assert "Table déjà existante" in result.stdout
+        assert "tbl_Sales" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_command(self, mock_table_class, mock_mgr_class):
+        """Test table delete command with --force."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        result = runner.invoke(app, ["table", "delete", "tbl_Old", "--force"])
+
+        assert result.exit_code == 0
+        assert "supprimée avec succès" in result.stdout
+        assert "tbl_Old" in result.stdout
+        mock_table_mgr.delete.assert_called_once_with(
+            "tbl_Old", worksheet=None, workbook=None
+        )
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_with_confirmation_yes(self, mock_table_class, mock_mgr_class):
+        """Test table delete command with user confirmation (yes)."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        result = runner.invoke(app, ["table", "delete", "tbl_Old"], input="y\n")
+
+        assert result.exit_code == 0
+        assert "supprimée avec succès" in result.stdout
+        mock_table_mgr.delete.assert_called_once_with(
+            "tbl_Old", worksheet=None, workbook=None
+        )
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_with_confirmation_no(self, mock_table_class, mock_mgr_class):
+        """Test table delete command with user confirmation (no)."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        result = runner.invoke(app, ["table", "delete", "tbl_Old"], input="n\n")
+
+        assert result.exit_code == 0
+        assert "annulée" in result.stdout
+        mock_table_mgr.delete.assert_not_called()
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_with_worksheet(self, mock_table_class, mock_mgr_class):
+        """Test table delete command with --worksheet option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        result = runner.invoke(
+            app, ["table", "delete", "tbl_Data", "--worksheet", "Sheet1", "--force"]
+        )
+
+        assert result.exit_code == 0
+        assert "supprimée avec succès" in result.stdout
+        mock_table_mgr.delete.assert_called_once_with(
+            "tbl_Data", worksheet="Sheet1", workbook=None
+        )
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_delete_not_found(self, mock_table_class, mock_mgr_class):
+        """Test table delete command when table not found."""
+        from xlmanage.exceptions import TableNotFoundError
+
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.delete.side_effect = TableNotFoundError(
+            "tbl_Missing", "any worksheet"
+        )
+
+        result = runner.invoke(app, ["table", "delete", "tbl_Missing", "--force"])
+
+        assert result.exit_code == 1
+        assert "Table introuvable" in result.stdout
+        assert "tbl_Missing" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_list_command_empty(self, mock_table_class, mock_mgr_class):
+        """Test table list command with no tables."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.list.return_value = []
+
+        result = runner.invoke(app, ["table", "list"])
+
+        assert result.exit_code == 0
+        assert "Aucune table trouvée" in result.stdout
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_list_command(self, mock_table_class, mock_mgr_class):
+        """Test table list command with tables."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.list.return_value = [
+            TableInfo(
+                name="tbl_Sales",
+                worksheet_name="Data",
+                range_ref="$A$1:$D$100",
+                header_row_range="$A$1:$D$1",
+                rows_count=99,
+            ),
+            TableInfo(
+                name="tbl_Products",
+                worksheet_name="Products",
+                range_ref="$A$1:$E$50",
+                header_row_range="$A$1:$E$1",
+                rows_count=49,
+            ),
+        ]
+
+        result = runner.invoke(app, ["table", "list"])
+
+        assert result.exit_code == 0
+        assert "tbl_Sales" in result.stdout
+        assert "tbl_Products" in result.stdout
+        assert "2 trouvée(s)" in result.stdout
+        assert "Tables" in result.stdout
+        mock_table_mgr.list.assert_called_once_with(worksheet=None, workbook=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_list_with_worksheet(self, mock_table_class, mock_mgr_class):
+        """Test table list command with --worksheet option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        mock_table_mgr.list.return_value = [
+            TableInfo(
+                name="tbl_Data",
+                worksheet_name="Sheet1",
+                range_ref="$A$1:$C$20",
+                header_row_range="$A$1:$C$1",
+                rows_count=19,
+            ),
+        ]
+
+        result = runner.invoke(app, ["table", "list", "--worksheet", "Sheet1"])
+
+        assert result.exit_code == 0
+        assert "tbl_Data" in result.stdout
+        assert "Sheet1" in result.stdout
+        mock_table_mgr.list.assert_called_once_with(worksheet="Sheet1", workbook=None)
+
+    @patch("xlmanage.cli.ExcelManager")
+    @patch("xlmanage.cli.TableManager")
+    def test_table_list_with_workbook(self, mock_table_class, mock_mgr_class):
+        """Test table list command with --workbook option."""
+        mock_mgr = Mock()
+        mock_mgr_class.return_value.__enter__.return_value = mock_mgr
+
+        mock_table_mgr = Mock()
+        mock_table_class.return_value = mock_table_mgr
+
+        test_file = Path("/tmp/test.xlsx")
+        mock_table_mgr.list.return_value = [
+            TableInfo(
+                name="tbl_Test",
+                worksheet_name="Data",
+                range_ref="$A$1:$B$10",
+                header_row_range="$A$1:$B$1",
+                rows_count=9,
+            ),
+        ]
+
+        result = runner.invoke(app, ["table", "list", "--workbook", str(test_file)])
+
+        assert result.exit_code == 0
+        assert "test.xlsx" in result.stdout
+        assert "tbl_Test" in result.stdout
+        mock_table_mgr.list.assert_called_once_with(worksheet=None, workbook=test_file)

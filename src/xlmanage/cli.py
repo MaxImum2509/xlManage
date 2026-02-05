@@ -29,6 +29,10 @@ try:
     from .exceptions import (
         ExcelConnectionError,
         ExcelManageError,
+        TableAlreadyExistsError,
+        TableNameError,
+        TableNotFoundError,
+        TableRangeError,
         WorkbookAlreadyOpenError,
         WorkbookNotFoundError,
         WorkbookSaveError,
@@ -37,6 +41,7 @@ try:
         WorksheetNameError,
         WorksheetNotFoundError,
     )
+    from .table_manager import TableManager
     from .workbook_manager import WorkbookManager
     from .worksheet_manager import WorksheetManager
 except ImportError:
@@ -44,6 +49,10 @@ except ImportError:
     from xlmanage.exceptions import (
         ExcelConnectionError,
         ExcelManageError,
+        TableAlreadyExistsError,
+        TableNameError,
+        TableNotFoundError,
+        TableRangeError,
         WorkbookAlreadyOpenError,
         WorkbookNotFoundError,
         WorkbookSaveError,
@@ -52,6 +61,7 @@ except ImportError:
         WorksheetNameError,
         WorksheetNotFoundError,
     )
+    from xlmanage.table_manager import TableManager
     from xlmanage.workbook_manager import WorkbookManager
     from xlmanage.worksheet_manager import WorksheetManager
 
@@ -973,6 +983,287 @@ def worksheet_copy(
             )
         )
         raise typer.Exit(code=1)
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+table_app = typer.Typer(help="Manage Excel tables")
+app.add_typer(table_app, name="table")
+
+
+@table_app.command("create")
+def table_create(
+    name: str = typer.Argument(..., help="Name of the new table"),
+    range_ref: str = typer.Argument(..., help="Range reference (e.g., 'A1:D100')"),
+    worksheet: str = typer.Option(
+        None,
+        "--worksheet",
+        "-ws",
+        help="Target worksheet name (defaults to active worksheet)",
+    ),
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+):
+    """Create a new table.
+
+    Creates a new Excel table (ListObject) in the specified worksheet.
+    The table must have a valid name and range reference.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            table_mgr = TableManager(excel_mgr)
+            info = table_mgr.create(
+                name, range_ref, worksheet=worksheet, workbook=workbook
+            )
+
+            workbook_info = (
+                f"Classeur : {workbook.name}" if workbook else "Classeur actif"
+            )
+
+            console.print(
+                Panel.fit(
+                    f"[green]OK[/green] Table créée avec succès\n\n"
+                    f"[bold]Nom :[/bold] {info.name}\n"
+                    f"[bold]Feuille :[/bold] {info.worksheet_name}\n"
+                    f"[bold]Plage :[/bold] {info.range_ref}\n"
+                    f"[bold]Lignes :[/bold] {info.rows_count}\n"
+                    f"[bold]{workbook_info}[/bold]",
+                    title="Table créée",
+                    border_style="green",
+                )
+            )
+
+    except TableNameError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Nom de table invalide\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Raison :[/bold] {e.reason}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except TableRangeError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Plage invalide\n\n"
+                f"[bold]Plage :[/bold] {e.range_ref}\n"
+                f"[bold]Raison :[/bold] {e.reason}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except TableAlreadyExistsError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Table déjà existante\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorksheetNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Feuille introuvable\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@table_app.command("delete")
+def table_delete(
+    name: str = typer.Argument(..., help="Name of the table to delete"),
+    worksheet: str = typer.Option(
+        None,
+        "--worksheet",
+        "-ws",
+        help="Worksheet containing the table (searches all if not specified)",
+    ),
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force deletion without confirmation",
+    ),
+):
+    """Delete a table.
+
+    Deletes the specified table from the workbook.
+    By default, asks for confirmation before deleting.
+    """
+    try:
+        # Confirmation (sauf si --force)
+        if not force:
+            workbook_info = (
+                f"dans le classeur '{workbook.name}'"
+                if workbook
+                else "dans le classeur actif"
+            )
+            worksheet_info = (
+                f"de la feuille '{worksheet}'"
+                if worksheet
+                else "de n'importe quelle feuille"
+            )
+            console.print(
+                f"\n[yellow]Attention :[/yellow] Vous allez supprimer la table "
+                f"'{name}' {worksheet_info} {workbook_info}"
+            )
+            confirm = typer.confirm("Êtes-vous sûr de vouloir continuer ?")
+            if not confirm:
+                console.print("[yellow]Opération annulée[/yellow]")
+                return
+
+        with ExcelManager() as excel_mgr:
+            table_mgr = TableManager(excel_mgr)
+            table_mgr.delete(name, worksheet=worksheet, workbook=workbook)
+
+            console.print(
+                Panel.fit(
+                    f"[green]OK[/green] Table supprimée avec succès\n\n"
+                    f"[bold]Nom :[/bold] {name}",
+                    title="Succès",
+                    border_style="green",
+                )
+            )
+
+    except TableNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Table introuvable\n\n"
+                f"[bold]Nom :[/bold] {e.name}\n"
+                f"[bold]Feuille :[/bold] {e.worksheet_name}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except WorkbookNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Classeur non trouvé\n\n[bold]Chemin :[/bold] {e.path}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@table_app.command("list")
+def table_list(
+    worksheet: str = typer.Option(
+        None,
+        "--worksheet",
+        "-ws",
+        help="Worksheet to list tables from (lists all if not specified)",
+    ),
+    workbook: Path = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help="Path to the target workbook (defaults to active workbook)",
+    ),
+):
+    """List all tables.
+
+    Displays information about all tables in the workbook or worksheet.
+    If no worksheet is specified, lists tables from all worksheets.
+    """
+    try:
+        with ExcelManager() as excel_mgr:
+            table_mgr = TableManager(excel_mgr)
+            tables = table_mgr.list(worksheet=worksheet, workbook=workbook)
+
+            if not tables:
+                console.print(
+                    Panel.fit(
+                        "[yellow]i[/yellow] Aucune table trouvée",
+                        title="Tables",
+                        border_style="yellow",
+                    )
+                )
+                return
+
+            workbook_info = f" - {workbook.name}" if workbook else " - Classeur actif"
+            worksheet_info = f" - Feuille '{worksheet}'" if worksheet else ""
+            title = f"Tables ({len(tables)} trouvée(s))"
+            table = Table(title=f"{title}{workbook_info}{worksheet_info}")
+            table.add_column("Nom", style="cyan")
+            table.add_column("Feuille", style="yellow")
+            table.add_column("Plage", style="magenta")
+            table.add_column("Lignes", justify="right", style="green")
+
+            for info in tables:
+                table.add_row(
+                    info.name,
+                    info.worksheet_name,
+                    info.range_ref,
+                    str(info.rows_count),
+                )
+
+            console.print(table)
+
     except WorkbookNotFoundError as e:
         console.print(
             Panel.fit(

@@ -1,6 +1,6 @@
 # Epic 8 - Story 6: Intégration CLI complète
 
-**Statut** : ✅ À implémenter
+**Statut** : ✅ Implémenté
 
 **En tant que** utilisateur
 **Je veux** utiliser toutes les commandes table via CLI
@@ -70,13 +70,13 @@ Avant de supprimer, demander la confirmation à l'utilisateur (sauf avec `--forc
 
 ## Définition of Done
 
-- [ ] 3 commandes CLI implémentées
-- [ ] Affichage Rich avec panels et tables
-- [ ] Gestion d'erreur complète
-- [ ] Confirmation pour delete
-- [ ] Tous les tests CLI passent (minimum 3 tests)
-- [ ] Messages utilisateur en français
-- [ ] Options complètes (--worksheet et --workbook sur chaque commande)
+- [x] 3 commandes CLI implémentées
+- [x] Affichage Rich avec panels et tables
+- [x] Gestion d'erreur complète
+- [x] Confirmation pour delete
+- [x] Tous les tests CLI passent (15 tests)
+- [x] Messages utilisateur en français
+- [x] Options complètes (--worksheet et --workbook sur chaque commande)
 
 ## Livrables
 
