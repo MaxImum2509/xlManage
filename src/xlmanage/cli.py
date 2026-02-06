@@ -26,10 +26,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 try:
-    from .excel_manager import ExcelManager
+    from .excel_manager import ExcelManager, InstanceInfo
     from .exceptions import (
         ExcelConnectionError,
+        ExcelInstanceNotFoundError,
         ExcelManageError,
+        ExcelRPCError,
         TableAlreadyExistsError,
         TableNameError,
         TableNotFoundError,
@@ -56,7 +58,9 @@ except ImportError:
     from xlmanage.excel_manager import ExcelManager
     from xlmanage.exceptions import (
         ExcelConnectionError,
+        ExcelInstanceNotFoundError,
         ExcelManageError,
+        ExcelRPCError,
         TableAlreadyExistsError,
         TableNameError,
         TableNotFoundError,
@@ -170,127 +174,241 @@ def start(
         raise typer.Exit(code=1)
 
 
+# Helper functions for stop command
+
+
+def _stop_active_instance(mgr: ExcelManager, save: bool, console: Console) -> None:
+    """Stop the active Excel instance."""
+    # Find active instance
+    info = mgr.get_running_instance()
+
+    if info is None:
+        console.print("[yellow]Aucune instance Excel active[/yellow]")
+        return
+
+    console.print(f"[dim]Arrêt de l'instance PID {info.pid}...[/dim]")
+
+    mgr.stop_instance(info.pid, save=save)
+
+    console.print(
+        Panel(
+            f"[green]Instance arrêtée avec succès[/green]\n\n"
+            f"PID : {info.pid}\n"
+            f"Classeurs : {info.workbooks_count}\n"
+            f"Sauvegarde : {'Oui' if save else 'Non'}",
+            title="Arrêt Excel",
+            border_style="green",
+        )
+    )
+
+
+def _stop_single_instance(
+    mgr: ExcelManager, pid: int, save: bool, console: Console
+) -> None:
+    """Stop a specific instance by PID."""
+    console.print(f"[dim]Arrêt de l'instance PID {pid}...[/dim]")
+
+    mgr.stop_instance(pid, save=save)
+
+    console.print(
+        Panel(
+            f"[green]Instance arrêtée avec succès[/green]\n\n"
+            f"PID : {pid}\n"
+            f"Sauvegarde : {'Oui' if save else 'Non'}",
+            title="Arrêt Excel",
+            border_style="green",
+        )
+    )
+
+
+def _stop_all_instances(mgr: ExcelManager, save: bool, console: Console) -> None:
+    """Stop all Excel instances."""
+    # List instances first
+    instances = mgr.list_running_instances()
+
+    if not instances:
+        console.print("[yellow]Aucune instance Excel active[/yellow]")
+        return
+
+    console.print(f"[dim]Arrêt de {len(instances)} instance(s)...[/dim]")
+
+    stopped_pids = mgr.stop_all(save=save)
+
+    # Display table of stopped instances
+    table = Table(title="Instances arrêtées", show_header=True)
+    table.add_column("PID", justify="right", style="cyan")
+    table.add_column("Statut", style="green")
+
+    for pid in stopped_pids:
+        table.add_row(str(pid), "Arrêtée")
+
+    # Failed instances
+    failed_pids = [info.pid for info in instances if info.pid not in stopped_pids]
+    for pid in failed_pids:
+        table.add_row(str(pid), "[red]Échec[/red]")
+
+    console.print(table)
+
+    console.print(
+        f"\n[green]{len(stopped_pids)} instance(s) arrêtée(s) avec succès[/green]"
+    )
+
+    if failed_pids:
+        console.print(
+            f"[yellow]{len(failed_pids)} instance(s) en échec - "
+            f"utilisez --force si nécessaire[/yellow]"
+        )
+
+
+def _force_kill_instances(
+    mgr: ExcelManager, instance_id: str | None, all_instances: bool, console: Console
+) -> None:
+    """Force kill with taskkill."""
+    # Warning
+    console.print(
+        "[red bold]ATTENTION : Force kill terminera brutalement Excel "
+        "sans sauvegarder les classeurs ![/red bold]\n"
+    )
+
+    if all_instances:
+        # List all instances
+        instances = mgr.list_running_instances()
+
+        if not instances:
+            console.print("[yellow]Aucune instance Excel active[/yellow]")
+            return
+
+        console.print(f"[dim]Force kill de {len(instances)} instance(s)...[/dim]")
+
+        for instance in instances:
+            try:
+                mgr.force_kill(instance.pid)
+                console.print(f"[green]PID {instance.pid} : terminé[/green]")
+            except Exception as e:
+                console.print(f"[red]PID {instance.pid} : échec - {e}[/red]")
+
+    elif instance_id:
+        pid = int(instance_id)
+        console.print(f"[dim]Force kill de PID {pid}...[/dim]")
+
+        mgr.force_kill(pid)
+
+        console.print(
+            Panel(
+                f"[green]Processus terminé avec force[/green]\n\n"
+                f"PID : {pid}\n"
+                f"[red]Classeurs perdus (non sauvegardés)[/red]",
+                title="Force Kill",
+                border_style="red",
+            )
+        )
+
+    else:
+        # Force kill active instance
+        info: InstanceInfo | None = mgr.get_running_instance()
+        if info is None:
+            console.print("[yellow]Aucune instance Excel active[/yellow]")
+            return
+
+        mgr.force_kill(info.pid)
+
+        console.print(
+            Panel(
+                f"[green]Processus terminé avec force[/green]\n\n"
+                f"PID : {info.pid}\n"
+                f"[red]Classeurs perdus (non sauvegardés)[/red]",
+                title="Force Kill",
+                border_style="red",
+            )
+        )
+
+
 @app.command()
 def stop(
+    instance_id: str | None = typer.Argument(
+        None, help="PID de l'instance à arrêter (optionnel)"
+    ),
     all_instances: bool = typer.Option(
-        False,
-        "--all",
-        "-a",
-        help="Stop all running Excel instances",
+        False, "--all", help="Arrêter toutes les instances Excel"
     ),
     force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Force stop without confirmation",
+        False, "--force", help="Forcer l'arrêt avec taskkill (sans sauvegarde)"
     ),
     no_save: bool = typer.Option(
-        False,
-        "--no-save",
-        help="Do not save workbooks before closing",
+        False, "--no-save", help="Ne pas sauvegarder les classeurs"
     ),
-):
-    """Stop Excel instance(s).
+) -> None:
+    """Arrête une ou plusieurs instances Excel.
 
-    By default, stops the active Excel instance with save prompt.
-    Use --all to stop all running Excel instances.
-    Use --force to skip confirmation prompts.
-    Use --no-save to close without saving workbooks.
+    Sans argument : arrête l'instance active (ou celle gérée par xlManage).
+    Avec PID : arrête l'instance spécifique.
+    Avec --all : arrête toutes les instances Excel.
+    Avec --force : utilise taskkill (perte de données !).
+
+    Exemples:
+
+        xlmanage stop
+
+        xlmanage stop 12345
+
+        xlmanage stop --all --no-save
+
+        xlmanage stop 12345 --force
     """
+    # Validation: --all incompatible with instance_id
+    if all_instances and instance_id:
+        console.print(
+            "[red]Erreur :[/red] Impossible de spécifier --all ET un PID", style="bold"
+        )
+        raise typer.Exit(code=1)
+
+    # Determine save (inverse of no_save)
+    save = not no_save
+
     try:
-        manager = ExcelManager()
+        mgr = ExcelManager()
 
+        # --force: use force_kill
+        if force:
+            _force_kill_instances(mgr, instance_id, all_instances, console)
+            return
+
+        # --all: stop all instances
         if all_instances:
-            # Get all running instances
-            instances = manager.list_running_instances()
+            _stop_all_instances(mgr, save, console)
+            return
 
-            if not instances:
-                console.print(
-                    Panel.fit(
-                        "[yellow]i[/yellow] No running Excel instances found",
-                        title="Information",
-                        border_style="yellow",
-                    )
-                )
-                return
+        # Specific PID
+        if instance_id:
+            pid = int(instance_id)
+            _stop_single_instance(mgr, pid, save, console)
+            return
 
-            # Confirm if not forced
-            if not force:
-                msg = f"\n[yellow]Warning:[/yellow] About to stop {len(instances)}"
-                msg += " Excel instance(s)"
-                console.print(msg)
-                confirm = typer.confirm("Are you sure you want to continue?")
-                if not confirm:
-                    console.print("[yellow]Operation cancelled[/yellow]")
-                    return
+        # No argument: stop active instance
+        _stop_active_instance(mgr, save, console)
 
-            # Stop all instances
-            stopped_count = 0
-            for info in instances:
-                try:
-                    # Connect to each instance and stop it
-                    # Note: This is a simplified approach
-                    # In production, we'd need to connect by PID or HWND
-                    manager.stop(save=not no_save)
-                    stopped_count += 1
-                except Exception:
-                    # Continue with next instance even if one fails
-                    continue
-
-            console.print(
-                Panel.fit(
-                    f"[green]OK[/green] Stopped {stopped_count} Excel instance(s)",
-                    title="Success",
-                    border_style="green",
-                )
-            )
-
-        else:
-            # Stop current instance
-            if not force and not no_save:
-                confirm = typer.confirm(
-                    "Stop the current Excel instance? Workbooks will be saved."
-                )
-                if not confirm:
-                    console.print("[yellow]Operation cancelled[/yellow]")
-                    return
-
-            manager.stop(save=not no_save)
-            console.print(
-                Panel.fit(
-                    "[green]OK[/green] Excel instance stopped successfully",
-                    title="Success",
-                    border_style="green",
-                )
-            )
-
-    except ExcelConnectionError as e:
+    except ValueError:
         console.print(
-            Panel.fit(
-                f"[red]X[/red] Failed to stop Excel instance\n\n"
-                f"[bold]Error:[/bold] {e}",
-                title="Connection Error",
-                border_style="red",
-            )
+            f"[red]Erreur :[/red] PID invalide '{instance_id}'. "
+            "Le PID doit être un nombre entier.",
+            style="bold",
         )
         raise typer.Exit(code=1)
-    except ExcelManageError as e:
+
+    except ExcelInstanceNotFoundError as e:
+        console.print(f"[red]Instance introuvable :[/red] {e}", style="bold")
+        raise typer.Exit(code=1)
+
+    except ExcelRPCError:
         console.print(
-            Panel.fit(
-                f"[red]X[/red] Excel management error\n\n[bold]Error:[/bold] {e}",
-                title="Error",
-                border_style="red",
-            )
+            "[red]Erreur RPC :[/red] L'instance est déconnectée ou zombie\n"
+            "[yellow]Utilisez --force pour terminer le processus[/yellow]",
+            style="bold",
         )
         raise typer.Exit(code=1)
+
     except Exception as e:
-        console.print(
-            Panel.fit(
-                f"[red]X[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
-                title="Unexpected Error",
-                border_style="red",
-            )
-        )
+        console.print(f"[red]Erreur :[/red] {e}", style="bold")
         raise typer.Exit(code=1)
 
 

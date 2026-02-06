@@ -1,6 +1,6 @@
 # Epic 11 - Story 4: Intégrer les commandes stop dans le CLI
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** utilisateur
 **Je veux** arrêter les instances Excel depuis le CLI
@@ -8,13 +8,13 @@
 
 ## Critères d'acceptation
 
-1. ⬜ `xlmanage stop` arrête l'instance gérée ou active
-2. ⬜ `xlmanage stop <pid>` arrête une instance spécifique
-3. ⬜ `xlmanage stop --all` arrête toutes les instances
-4. ⬜ `xlmanage stop --force` utilise force_kill
-5. ⬜ `xlmanage stop --no-save` ne sauvegarde pas les classeurs
-6. ⬜ Un résumé Rich affiche les instances arrêtées
-7. ⬜ Les tests CLI passent pour toutes les variantes
+1. ✅ `xlmanage stop` arrête l'instance gérée ou active
+2. ✅ `xlmanage stop <pid>` arrête une instance spécifique
+3. ✅ `xlmanage stop --all` arrête toutes les instances
+4. ✅ `xlmanage stop --force` utilise force_kill
+5. ✅ `xlmanage stop --no-save` ne sauvegarde pas les classeurs
+6. ✅ Un résumé Rich affiche les instances arrêtées
+7. ✅ Les tests CLI passent pour toutes les variantes
 
 ## Tâches techniques
 
@@ -417,11 +417,11 @@ def test_stop_no_instances():
 
 ## Définition of Done
 
-- [ ] `xlmanage stop` arrête l'instance active
-- [ ] `xlmanage stop <pid>` arrête une instance spécifique
-- [ ] `xlmanage stop --all` arrête toutes les instances
-- [ ] `xlmanage stop --force` utilise force_kill avec avertissement
-- [ ] `--no-save` fonctionne correctement
-- [ ] Les erreurs sont gérées avec messages Rich appropriés
-- [ ] Tous les tests CLI passent (8+ tests)
-- [ ] L'aide CLI est complète avec exemples
+- [x] `xlmanage stop` arrête l'instance active
+- [x] `xlmanage stop <pid>` arrête une instance spécifique
+- [x] `xlmanage stop --all` arrête toutes les instances
+- [x] `xlmanage stop --force` utilise force_kill avec avertissement
+- [x] `--no-save` fonctionne correctement
+- [x] Les erreurs sont gérées avec messages Rich appropriés
+- [x] Tous les tests CLI passent (15 tests)
+- [x] L'aide CLI est complète avec exemples
