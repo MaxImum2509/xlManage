@@ -475,3 +475,185 @@ class VBAManager:
 
         except pywintypes.com_error as e:
             raise VBAImportError(str(module_file), f"Erreur COM: {e}") from e
+
+    def export_module(
+        self, module_name: str, output_file: Path, workbook: Path | None = None
+    ) -> Path:
+        """Exporte un module VBA vers un fichier.
+
+        Les modules standard, classe et UserForms sont exportés via component.Export().
+        Les modules de document (ThisWorkbook, Sheet1, etc.) nécessitent un export
+        manuel car Excel ne supporte pas Export() pour eux.
+
+        Args:
+            module_name: Nom du module dans le projet VBA
+            output_file: Chemin de destination (doit inclure l'extension)
+            workbook: Classeur source. Si None, utilise le classeur actif
+
+        Returns:
+            Path: Chemin effectif du fichier exporté
+
+        Raises:
+            VBAModuleNotFoundError: Module introuvable dans le projet
+            VBAExportError: Échec d'écriture ou permissions insuffisantes
+            VBAProjectAccessError: Trust Center refuse l'accès
+
+        Example:
+            >>> vba_mgr.export_module("Module1", Path("backup/Module1.bas"))
+            Path('backup/Module1.bas')
+
+            >>> # Exporter un module de document
+            >>> vba_mgr.export_module("ThisWorkbook", Path("ThisWorkbook.cls"))
+        """
+        # Résoudre le classeur
+        from .worksheet_manager import _resolve_workbook
+
+        wb = _resolve_workbook(self.app, workbook)
+
+        # Accéder au VBProject
+        vb_project = _get_vba_project(wb)
+
+        # Trouver le composant
+        component = _find_component(vb_project, module_name)
+        if component is None:
+            from .exceptions import VBAModuleNotFoundError
+
+            raise VBAModuleNotFoundError(module_name, wb.Name)
+
+        # Vérifier le type de module
+        module_type_code = component.Type
+
+        try:
+            # Les modules de document (Type 100) nécessitent un export manuel
+            if module_type_code == VBEXT_CT_DOCUMENT:
+                return self._export_document_module(component, output_file)
+            else:
+                # Export standard pour les autres types
+                return self._export_standard_component(component, output_file)
+
+        except PermissionError as e:
+            from .exceptions import VBAExportError
+
+            raise VBAExportError(
+                module_name, str(output_file), f"Permission refusée: {e}"
+            ) from e
+        except pywintypes.com_error as e:
+            from .exceptions import VBAExportError
+
+            raise VBAExportError(
+                module_name, str(output_file), f"Erreur COM: {e}"
+            ) from e
+
+    def _export_standard_component(
+        self, component: CDispatch, output_file: Path
+    ) -> Path:
+        """Exporte un composant VBA standard via component.Export().
+
+        Args:
+            component: Composant VBA à exporter
+            output_file: Chemin de destination
+
+        Returns:
+            Path: Chemin du fichier exporté
+        """
+        # Créer le dossier parent si nécessaire
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Export via COM
+        component.Export(str(output_file.resolve()))
+
+        return output_file
+
+    def _export_document_module(self, component: CDispatch, output_file: Path) -> Path:
+        """Exporte manuellement un module de document.
+
+        Les modules de document (ThisWorkbook, Sheet1, etc.) ne supportent pas
+        component.Export(). On doit extraire le code via CodeModule.Lines().
+
+        Args:
+            component: Module de document à exporter
+            output_file: Chemin de destination
+
+        Returns:
+            Path: Chemin du fichier exporté
+        """
+        # Créer le dossier parent si nécessaire
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Extraire le code source
+        code_module = component.CodeModule
+        line_count = code_module.CountOfLines
+
+        if line_count > 0:
+            # Lines(start_line, count) retourne le code
+            code_content = code_module.Lines(1, line_count)
+        else:
+            code_content = ""
+
+        # Écrire dans le fichier avec l'encodage VBA
+        output_file.write_text(code_content, encoding=VBA_ENCODING)
+
+        return output_file
+
+    def list_modules(self, workbook: Path | None = None) -> list[VBAModuleInfo]:
+        """Liste tous les modules VBA du classeur.
+
+        Inclut tous les types de modules : standard, classe, UserForms,
+        et modules de document (ThisWorkbook, Sheet1, etc.).
+
+        Args:
+            workbook: Classeur à analyser. Si None, utilise le classeur actif
+
+        Returns:
+            list[VBAModuleInfo]: Liste des modules avec leurs informations
+
+        Raises:
+            VBAProjectAccessError: Trust Center refuse l'accès
+            VBAWorkbookFormatError: Classeur au format .xlsx
+
+        Example:
+            >>> modules = vba_mgr.list_modules()
+            >>> for module in modules:
+            ...     print(f"{module.name} ({module.module_type}): {module.lines_count}")
+            Module1 (standard): 42
+            MyClass (class): 15
+            ThisWorkbook (document): 8
+        """
+        # Résoudre le classeur
+        from .worksheet_manager import _resolve_workbook
+
+        wb = _resolve_workbook(self.app, workbook)
+
+        # Accéder au VBProject
+        vb_project = _get_vba_project(wb)
+
+        modules: list[VBAModuleInfo] = []
+
+        # Itérer sur tous les composants VBA
+        for component in vb_project.VBComponents:
+            module_name = component.Name
+            module_type_code = component.Type
+            lines_count = component.CodeModule.CountOfLines
+
+            # Mapper le code type vers le nom lisible
+            module_type = VBA_TYPE_NAMES.get(module_type_code, "unknown")
+
+            # Extraire PredeclaredId pour les classes
+            has_predeclared_id = False
+            if module_type_code == VBEXT_CT_CLASS_MODULE:
+                try:
+                    has_predeclared_id = component.Properties("PredeclaredId").Value
+                except pywintypes.com_error:
+                    # Si la propriété n'existe pas, False par défaut
+                    has_predeclared_id = False
+
+            # Créer VBAModuleInfo
+            info = VBAModuleInfo(
+                name=module_name,
+                module_type=module_type,
+                lines_count=lines_count,
+                has_predeclared_id=has_predeclared_id,
+            )
+            modules.append(info)
+
+        return modules
