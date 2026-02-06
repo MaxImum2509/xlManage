@@ -1,6 +1,8 @@
 # Epic 12 - Story 2: Implémenter MacroRunner pour l'exécution de macros VBA
 
-**Statut** : 🔴 À faire
+**Statut** : ✅ Terminé
+
+**Date de réalisation** : 2026-02-06
 
 **En tant que** développeur
 **Je veux** une classe MacroRunner capable d'exécuter des macros VBA
