@@ -18,6 +18,7 @@ venv/
 # Ignorer les fichiers de logs et de cache
 *.log
 *.cache
+.coverage
 
 # Ignorer les fichiers de documentation générés
 docs/_build/

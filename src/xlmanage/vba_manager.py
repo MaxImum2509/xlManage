@@ -657,3 +657,72 @@ class VBAManager:
             modules.append(info)
 
         return modules
+
+    def delete_module(
+        self,
+        module_name: str,
+        workbook: Path | None = None,
+        force: bool = False,
+    ) -> None:
+        """Supprime un module VBA du projet.
+
+        Seuls les modules standard, classe et UserForms peuvent être supprimés.
+        Les modules de document (ThisWorkbook, Sheet1, etc.) sont intégrés
+        au classeur et ne peuvent pas être retirés.
+
+        Args:
+            module_name: Nom du module à supprimer
+            workbook: Classeur cible. Si None, utilise le classeur actif
+            force: Paramètre réservé (aucun dialogue dans Excel)
+
+        Raises:
+            VBAModuleNotFoundError: Module introuvable ou non supprimable
+            VBAProjectAccessError: Trust Center refuse l'accès
+
+        Example:
+            >>> vba_mgr.delete_module("Module1")
+
+            >>> # Erreur avec module de document
+            >>> vba_mgr.delete_module("ThisWorkbook")
+            VBAModuleNotFoundError: Cannot delete document module 'ThisWorkbook'
+        """
+        # Résoudre le classeur
+        from .worksheet_manager import _resolve_workbook
+
+        wb = _resolve_workbook(self.app, workbook)
+
+        # Accéder au VBProject
+        vb_project = _get_vba_project(wb)
+
+        # Trouver le composant
+        component = _find_component(vb_project, module_name)
+        if component is None:
+            from .exceptions import VBAModuleNotFoundError
+
+            raise VBAModuleNotFoundError(module_name, wb.Name)
+
+        # Vérifier le type de module
+        module_type_code = component.Type
+
+        # Les modules de document (Type 100) ne peuvent PAS être supprimés
+        if module_type_code == VBEXT_CT_DOCUMENT:
+            from .exceptions import VBAModuleNotFoundError
+
+            module_type_name = VBA_TYPE_NAMES.get(module_type_code, "unknown")
+            raise VBAModuleNotFoundError(
+                module_name,
+                wb.Name,
+                reason=f"Cannot delete document module. Type: {module_type_name}",
+            )
+
+        try:
+            # Supprimer le composant du projet
+            vb_project.VBComponents.Remove(component)
+
+            # Libérer la référence COM (IMPORTANT)
+            del component
+
+        except pywintypes.com_error as e:
+            from .exceptions import VBAModuleNotFoundError
+
+            raise VBAModuleNotFoundError(module_name, wb.Name) from e

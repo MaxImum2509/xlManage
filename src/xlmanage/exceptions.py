@@ -311,21 +311,30 @@ class VBAProjectAccessError(ExcelManageError):
 class VBAModuleNotFoundError(ExcelManageError):
     """Module VBA introuvable dans le projet.
 
-    Raised when attempting to access a VBA module that doesn't exist.
+    Raised when attempting to access a VBA module that doesn't exist,
+    or when trying to delete a non-deletable module (document modules).
     """
 
-    def __init__(self, module_name: str, workbook_name: str):
+    def __init__(self, module_name: str, workbook_name: str, reason: str = ""):
         """Initialize VBA module not found error.
 
         Args:
             module_name: Name of the missing module
             workbook_name: Name of the workbook that was searched
+            reason: Optional additional context (e.g., "Cannot delete document module")
         """
         self.module_name = module_name
         self.workbook_name = workbook_name
-        super().__init__(
-            f"VBA module '{module_name}' not found in workbook '{workbook_name}'"
-        )
+        self.reason = reason
+
+        if reason:
+            message = f"Module '{module_name}' in '{workbook_name}': {reason}"
+        else:
+            message = (
+                f"VBA module '{module_name}' not found in workbook '{workbook_name}'"
+            )
+
+        super().__init__(message)
 
 
 class VBAModuleAlreadyExistsError(ExcelManageError):
