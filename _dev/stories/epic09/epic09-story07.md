@@ -1,6 +1,6 @@
 # Epic 9 - Story 7: Intégrer les commandes VBA dans le CLI
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** utilisateur
 **Je veux** utiliser les commandes VBA depuis le terminal
@@ -8,13 +8,13 @@
 
 ## Critères d'acceptation
 
-1. ⬜ Les 4 commandes `vba` sont implémentées dans `cli.py`
-2. ⬜ `xlmanage vba import` importe un fichier de module
-3. ⬜ `xlmanage vba export` exporte un module vers un fichier
-4. ⬜ `xlmanage vba list` affiche la liste des modules
-5. ⬜ `xlmanage vba delete` supprime un module
-6. ⬜ Les erreurs sont affichées proprement avec Rich
-7. ⬜ Les tests CLI passent pour toutes les commandes
+1. ✅ Les 4 commandes `vba` sont implémentées dans `cli.py`
+2. ✅ `xlmanage vba import` importe un fichier de module
+3. ✅ `xlmanage vba export` exporte un module vers un fichier
+4. ✅ `xlmanage vba list` affiche la liste des modules
+5. ✅ `xlmanage vba delete` supprime un module
+6. ✅ Les erreurs sont affichées proprement avec Rich
+7. ✅ Les tests CLI passent pour toutes les commandes
 
 ## Tâches techniques
 
@@ -435,10 +435,10 @@ def test_vba_delete_success():
 
 ## Définition of Done
 
-- [ ] Les 4 commandes VBA sont implémentées dans `cli.py`
-- [ ] Chaque commande gère les erreurs avec messages Rich appropriés
-- [ ] `vba list` affiche un tableau Rich structuré
-- [ ] Les messages d'aide sont clairs pour les erreurs Trust Center et format
-- [ ] Tous les tests CLI passent (4+ tests)
-- [ ] L'aide CLI (`xlmanage vba --help`) est complète
-- [ ] Les exemples dans les docstrings sont fonctionnels
+- [x] Les 4 commandes VBA sont implémentées dans `cli.py`
+- [x] Chaque commande gère les erreurs avec messages Rich appropriés
+- [x] `vba list` affiche un tableau Rich structuré
+- [x] Les messages d'aide sont clairs pour les erreurs Trust Center et format
+- [x] Tous les tests CLI passent (18 tests)
+- [x] L'aide CLI (`xlmanage vba --help`) est complète
+- [x] Les exemples dans les docstrings sont fonctionnels

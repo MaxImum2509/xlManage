@@ -33,6 +33,12 @@ try:
         TableNameError,
         TableNotFoundError,
         TableRangeError,
+        VBAExportError,
+        VBAImportError,
+        VBAModuleAlreadyExistsError,
+        VBAModuleNotFoundError,
+        VBAProjectAccessError,
+        VBAWorkbookFormatError,
         WorkbookAlreadyOpenError,
         WorkbookNotFoundError,
         WorkbookSaveError,
@@ -42,6 +48,7 @@ try:
         WorksheetNotFoundError,
     )
     from .table_manager import TableManager
+    from .vba_manager import VBAManager
     from .workbook_manager import WorkbookManager
     from .worksheet_manager import WorksheetManager
 except ImportError:
@@ -53,6 +60,12 @@ except ImportError:
         TableNameError,
         TableNotFoundError,
         TableRangeError,
+        VBAExportError,
+        VBAImportError,
+        VBAModuleAlreadyExistsError,
+        VBAModuleNotFoundError,
+        VBAProjectAccessError,
+        VBAWorkbookFormatError,
         WorkbookAlreadyOpenError,
         WorkbookNotFoundError,
         WorkbookSaveError,
@@ -62,6 +75,7 @@ except ImportError:
         WorksheetNotFoundError,
     )
     from xlmanage.table_manager import TableManager
+    from xlmanage.vba_manager import VBAManager
     from xlmanage.workbook_manager import WorkbookManager
     from xlmanage.worksheet_manager import WorksheetManager
 
@@ -1273,6 +1287,348 @@ def table_list(
             )
         )
         raise typer.Exit(code=1)
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+# ============================================================================
+# VBA Commands
+# ============================================================================
+
+vba_app = typer.Typer(help="Manage VBA modules")
+app.add_typer(vba_app, name="vba")
+
+
+@vba_app.command("import")
+def vba_import(
+    module_file: Path = typer.Argument(
+        ..., help="Chemin du fichier module (.bas, .cls, .frm)"
+    ),
+    module_type: str = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Type de module (standard|class|userform). Auto-détecté si omis",
+    ),
+    workbook: Path = typer.Option(
+        None, "--workbook", "-w", help="Classeur cible (actif si omis)"
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Remplacer le module s'il existe déjà"
+    ),
+    visible: bool = typer.Option(False, "--visible", help="Rendre Excel visible"),
+):
+    """Importe un module VBA depuis un fichier.
+
+    Exemples:
+
+        xlmanage vba import Module1.bas
+
+        xlmanage vba import MyClass.cls --workbook data.xlsm --overwrite
+
+        xlmanage vba import UserForm1.frm --type userform
+    """
+    try:
+        with ExcelManager(visible=visible) as excel_mgr:
+            excel_mgr.start()
+            vba_mgr = VBAManager(excel_mgr)
+
+            # Importer le module
+            info = vba_mgr.import_module(
+                module_file=module_file,
+                module_type=module_type,
+                workbook=workbook,
+                overwrite=overwrite,
+            )
+
+            # Affichage du succès
+            console.print(
+                Panel(
+                    f"[green]OK[/green] Module VBA importé avec succès\n\n"
+                    f"[bold]Nom :[/bold] {info.name}\n"
+                    f"[bold]Type :[/bold] {info.module_type}\n"
+                    f"[bold]Lignes :[/bold] {info.lines_count}\n"
+                    f"[bold]PredeclaredId :[/bold] "
+                    f"{'Oui' if info.has_predeclared_id else 'Non'}",
+                    title="Import VBA",
+                    border_style="green",
+                )
+            )
+
+    except VBAProjectAccessError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur d'accès VBA\n\n"
+                f"[bold]Détails :[/bold] {e}\n\n"
+                f"[yellow]Solution :[/yellow] Activez l'option "
+                "'Trust access to the VBA project object model' dans Excel :\n"
+                "File > Options > Trust Center > Trust Center Settings > "
+                "Macro Settings",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except VBAWorkbookFormatError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Format de classeur invalide\n\n"
+                f"[bold]Détails :[/bold] {e}\n\n"
+                f"[yellow]Solution :[/yellow] Convertissez le classeur au format .xlsm "
+                "pour supporter les macros.",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except VBAModuleAlreadyExistsError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Module existant\n\n"
+                f"[bold]Module :[/bold] {e.module_name}\n"
+                f"[bold]Classeur :[/bold] {e.workbook_name}\n\n"
+                f"[yellow]Utilisez --overwrite pour le remplacer[/yellow]",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except VBAImportError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur d'import\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@vba_app.command("export")
+def vba_export(
+    module_name: str = typer.Argument(..., help="Nom du module à exporter"),
+    output_file: Path = typer.Argument(..., help="Fichier de destination"),
+    workbook: Path = typer.Option(
+        None, "--workbook", "-w", help="Classeur source (actif si omis)"
+    ),
+    visible: bool = typer.Option(False, "--visible", help="Rendre Excel visible"),
+):
+    """Exporte un module VBA vers un fichier.
+
+    Exemples:
+
+        xlmanage vba export Module1 backup/Module1.bas
+
+        xlmanage vba export ThisWorkbook ThisWorkbook.cls --workbook data.xlsm
+    """
+    try:
+        with ExcelManager(visible=visible) as excel_mgr:
+            excel_mgr.start()
+            vba_mgr = VBAManager(excel_mgr)
+
+            # Exporter le module
+            exported_path = vba_mgr.export_module(
+                module_name=module_name, output_file=output_file, workbook=workbook
+            )
+
+            # Affichage du succès
+            console.print(
+                Panel(
+                    f"[green]OK[/green] Module VBA exporté avec succès\n\n"
+                    f"[bold]Module :[/bold] {module_name}\n"
+                    f"[bold]Fichier :[/bold] {exported_path}",
+                    title="Export VBA",
+                    border_style="green",
+                )
+            )
+
+    except VBAModuleNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Module introuvable\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except VBAExportError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur d'export\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@vba_app.command("list")
+def vba_list(
+    workbook: Path = typer.Option(
+        None, "--workbook", "-w", help="Classeur à analyser (actif si omis)"
+    ),
+    visible: bool = typer.Option(False, "--visible", help="Rendre Excel visible"),
+):
+    """Liste tous les modules VBA d'un classeur.
+
+    Exemples:
+
+        xlmanage vba list
+
+        xlmanage vba list --workbook data.xlsm
+    """
+    try:
+        with ExcelManager(visible=visible) as excel_mgr:
+            excel_mgr.start()
+            vba_mgr = VBAManager(excel_mgr)
+
+            # Lister les modules
+            modules = vba_mgr.list_modules(workbook=workbook)
+
+            if not modules:
+                console.print(
+                    Panel.fit(
+                        "[yellow]i[/yellow] Aucun module VBA trouvé",
+                        title="Modules VBA",
+                        border_style="yellow",
+                    )
+                )
+                return
+
+            # Créer un tableau Rich
+            workbook_info = f" - {workbook.name}" if workbook else " - Classeur actif"
+            table = Table(title=f"Modules VBA{workbook_info}")
+            table.add_column("Nom", style="cyan", width=30)
+            table.add_column("Type", style="yellow", width=15)
+            table.add_column("Lignes", justify="right", style="green", width=10)
+            table.add_column(
+                "PredeclaredId", justify="center", style="magenta", width=15
+            )
+
+            for module in modules:
+                predeclared = "Oui" if module.has_predeclared_id else "-"
+                table.add_row(
+                    module.name,
+                    module.module_type,
+                    str(module.lines_count),
+                    predeclared,
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]Total : {len(modules)} module(s)[/dim]")
+
+    except VBAProjectAccessError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur d'accès VBA\n\n"
+                f"[bold]Détails :[/bold] {e}\n\n"
+                f"[yellow]Solution :[/yellow] Activez l'option "
+                "'Trust access to the VBA project object model' dans Excel :\n"
+                "File > Options > Trust Center > Trust Center Settings > "
+                "Macro Settings",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except ExcelManageError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@vba_app.command("delete")
+def vba_delete(
+    module_name: str = typer.Argument(..., help="Nom du module à supprimer"),
+    workbook: Path = typer.Option(
+        None, "--workbook", "-w", help="Classeur cible (actif si omis)"
+    ),
+    force: bool = typer.Option(False, "--force", help="Pas de confirmation (réservé)"),
+    visible: bool = typer.Option(False, "--visible", help="Rendre Excel visible"),
+):
+    """Supprime un module VBA.
+
+    Attention: Les modules de document (ThisWorkbook, Sheet1, etc.) ne peuvent
+    pas être supprimés.
+
+    Exemples:
+
+        xlmanage vba delete Module1
+
+        xlmanage vba delete MyClass --workbook data.xlsm
+    """
+    try:
+        with ExcelManager(visible=visible) as excel_mgr:
+            excel_mgr.start()
+            vba_mgr = VBAManager(excel_mgr)
+
+            # Supprimer le module
+            vba_mgr.delete_module(
+                module_name=module_name, workbook=workbook, force=force
+            )
+
+            # Affichage du succès
+            console.print(
+                Panel(
+                    f"[green]OK[/green] Module VBA supprimé avec succès\n\n"
+                    f"[bold]Module :[/bold] {module_name}",
+                    title="Suppression VBA",
+                    border_style="green",
+                )
+            )
+
+    except VBAModuleNotFoundError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
+                title="Erreur",
+                border_style="red",
+            )
+        )
+        if "Cannot delete document module" in str(e):
+            console.print(
+                "\n[yellow]Les modules de document (ThisWorkbook, Sheet1, etc.) "
+                "font partie du classeur et ne peuvent pas être supprimés.[/yellow]"
+            )
+        raise typer.Exit(code=1)
+
     except ExcelManageError as e:
         console.print(
             Panel.fit(
