@@ -398,21 +398,33 @@ class VBAExportError(ExcelManageError):
 
 
 class VBAMacroError(ExcelManageError):
-    """Échec d'exécution de macro VBA.
+    """Échec d'exécution ou de parsing de macro VBA.
 
-    Raised when a VBA macro execution fails or the macro is not found.
+    Raised when a VBA macro execution fails, macro is not found,
+    or argument parsing fails.
+
+    Attributes:
+        macro_name: Name of the macro (optional for parsing errors)
+        reason: Explanation of the failure
     """
 
-    def __init__(self, macro_name: str, reason: str):
+    def __init__(self, macro_name: str = "", reason: str = "") -> None:
         """Initialize VBA macro error.
 
         Args:
-            macro_name: Name of the macro that failed
-            reason: Explanation of the failure (from COM excepinfo[2])
+            macro_name: Name of the macro that failed (empty for parsing errors)
+            reason: Explanation of the failure (from COM excepinfo[2] or parsing error)
         """
         self.macro_name = macro_name
         self.reason = reason
-        super().__init__(f"Macro '{macro_name}' failed: {reason}")
+
+        message = "Macro error"
+        if macro_name:
+            message += f" '{macro_name}'"
+        if reason:
+            message += f": {reason}"
+
+        super().__init__(message)
 
 
 class VBAWorkbookFormatError(ExcelManageError):
