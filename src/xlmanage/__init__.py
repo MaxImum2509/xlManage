@@ -33,6 +33,13 @@ __all__ = [
     "TableAlreadyExistsError",
     "TableRangeError",
     "TableNameError",
+    "VBAProjectAccessError",
+    "VBAModuleNotFoundError",
+    "VBAModuleAlreadyExistsError",
+    "VBAImportError",
+    "VBAExportError",
+    "VBAMacroError",
+    "VBAWorkbookFormatError",
 ]
 
 # Import exceptions for easy access
@@ -47,6 +54,13 @@ from .exceptions import (
     TableNameError,
     TableNotFoundError,
     TableRangeError,
+    VBAExportError,
+    VBAImportError,
+    VBAMacroError,
+    VBAModuleAlreadyExistsError,
+    VBAModuleNotFoundError,
+    VBAProjectAccessError,
+    VBAWorkbookFormatError,
     WorkbookAlreadyOpenError,
     WorkbookNotFoundError,
     WorkbookSaveError,

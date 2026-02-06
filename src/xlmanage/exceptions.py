@@ -286,3 +286,140 @@ class TableNameError(ExcelManageError):
         self.name = name
         self.reason = reason
         super().__init__(f"Invalid table name '{name}': {reason}")
+
+
+class VBAProjectAccessError(ExcelManageError):
+    """Accès au projet VBA refusé par le Trust Center.
+
+    Raised when Excel's Trust Center blocks programmatic access to VBA.
+    """
+
+    def __init__(self, workbook_name: str):
+        """Initialize VBA project access error.
+
+        Args:
+            workbook_name: Name of the workbook with blocked VBA access
+        """
+        self.workbook_name = workbook_name
+        super().__init__(
+            f"Access to VBA project in '{workbook_name}' denied. "
+            "Enable 'Trust access to the VBA project object model' in "
+            "Excel Trust Center."
+        )
+
+
+class VBAModuleNotFoundError(ExcelManageError):
+    """Module VBA introuvable dans le projet.
+
+    Raised when attempting to access a VBA module that doesn't exist.
+    """
+
+    def __init__(self, module_name: str, workbook_name: str):
+        """Initialize VBA module not found error.
+
+        Args:
+            module_name: Name of the missing module
+            workbook_name: Name of the workbook that was searched
+        """
+        self.module_name = module_name
+        self.workbook_name = workbook_name
+        super().__init__(
+            f"VBA module '{module_name}' not found in workbook '{workbook_name}'"
+        )
+
+
+class VBAModuleAlreadyExistsError(ExcelManageError):
+    """Module VBA avec ce nom existe déjà.
+
+    Raised when attempting to import a module with a duplicate name.
+    """
+
+    def __init__(self, module_name: str, workbook_name: str):
+        """Initialize VBA module already exists error.
+
+        Args:
+            module_name: Name of the duplicate module
+            workbook_name: Name of the workbook containing the duplicate
+        """
+        self.module_name = module_name
+        self.workbook_name = workbook_name
+        super().__init__(
+            f"VBA module '{module_name}' already exists in workbook '{workbook_name}'"
+        )
+
+
+class VBAImportError(ExcelManageError):
+    """Échec d'import de module VBA.
+
+    Raised when importing a VBA module fails (invalid file, wrong encoding, etc.).
+    """
+
+    def __init__(self, module_file: str, reason: str):
+        """Initialize VBA import error.
+
+        Args:
+            module_file: Path to the module file that failed to import
+            reason: Explanation of why the import failed
+        """
+        self.module_file = module_file
+        self.reason = reason
+        super().__init__(f"Failed to import VBA module from '{module_file}': {reason}")
+
+
+class VBAExportError(ExcelManageError):
+    """Échec d'export de module VBA.
+
+    Raised when exporting a VBA module fails (permissions, invalid path, etc.).
+    """
+
+    def __init__(self, module_name: str, output_path: str, reason: str):
+        """Initialize VBA export error.
+
+        Args:
+            module_name: Name of the module that failed to export
+            output_path: Destination path where export was attempted
+            reason: Explanation of why the export failed
+        """
+        self.module_name = module_name
+        self.output_path = output_path
+        self.reason = reason
+        super().__init__(
+            f"Failed to export VBA module '{module_name}' to '{output_path}': {reason}"
+        )
+
+
+class VBAMacroError(ExcelManageError):
+    """Échec d'exécution de macro VBA.
+
+    Raised when a VBA macro execution fails or the macro is not found.
+    """
+
+    def __init__(self, macro_name: str, reason: str):
+        """Initialize VBA macro error.
+
+        Args:
+            macro_name: Name of the macro that failed
+            reason: Explanation of the failure (from COM excepinfo[2])
+        """
+        self.macro_name = macro_name
+        self.reason = reason
+        super().__init__(f"Macro '{macro_name}' failed: {reason}")
+
+
+class VBAWorkbookFormatError(ExcelManageError):
+    """Classeur au format .xlsx ne supportant pas les macros.
+
+    Raised when attempting VBA operations on a macro-free workbook format.
+    """
+
+    def __init__(self, workbook_name: str):
+        """Initialize VBA workbook format error.
+
+        Args:
+            workbook_name: Name of the .xlsx workbook
+        """
+        self.workbook_name = workbook_name
+        super().__init__(
+            f"Workbook '{workbook_name}' is in .xlsx format which doesn't support VBA. "
+            "Convert to .xlsm format to use macros."
+        )

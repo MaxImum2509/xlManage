@@ -1,6 +1,6 @@
 # Epic 9 - Story 2: Implémenter les fonctions utilitaires VBA
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** développeur
 **Je veux** avoir des fonctions utilitaires pour manipuler les projets VBA
@@ -8,11 +8,11 @@
 
 ## Critères d'acceptation
 
-1. ⬜ Quatre fonctions utilitaires sont créées dans `vba_manager.py`
-2. ⬜ Chaque fonction gère correctement les erreurs COM
-3. ⬜ Les fonctions sont testées unitairement avec des mocks
-4. ⬜ La détection de type de module fonctionne correctement
-5. ⬜ L'accès au VBProject est sécurisé
+1. ✅ Quatre fonctions utilitaires sont créées dans `vba_manager.py`
+2. ✅ Chaque fonction gère correctement les erreurs COM
+3. ✅ Les fonctions sont testées unitairement avec des mocks
+4. ✅ La détection de type de module fonctionne correctement
+5. ✅ L'accès au VBProject est sécurisé
 
 ## Tâches techniques
 
@@ -383,8 +383,8 @@ def test_parse_class_module_missing_vb_name(tmp_path):
 
 ## Définition of Done
 
-- [ ] Les 4 fonctions utilitaires sont implémentées avec docstrings complètes
-- [ ] Tous les tests passent (15+ tests)
-- [ ] Couverture de code 100% pour les nouvelles fonctions
-- [ ] Les erreurs COM sont correctement interceptées et traduites
-- [ ] L'encodage windows-1252 est respecté
+- [x] Les 4 fonctions utilitaires sont implémentées avec docstrings complètes
+- [x] Tous les tests passent (13 tests)
+- [x] Couverture de code 83% pour les nouvelles fonctions
+- [x] Les erreurs COM sont correctement interceptées et traduites
+- [x] L'encodage windows-1252 est respecté

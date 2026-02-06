@@ -1,6 +1,6 @@
 # Epic 9 - Story 1: Créer les exceptions pour la gestion des modules VBA
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** développeur
 **Je veux** avoir des exceptions spécifiques pour les erreurs de gestion VBA
@@ -8,11 +8,11 @@
 
 ## Critères d'acceptation
 
-1. ⬜ Six nouvelles exceptions VBA sont créées dans `src/xlmanage/exceptions.py`
-2. ⬜ Toutes héritent de `ExcelManageError`
-3. ⬜ Chaque exception a des attributs métier appropriés
-4. ⬜ Les exceptions sont exportées dans `__init__.py`
-5. ⬜ Les tests couvrent tous les cas d'usage
+1. ✅ Sept nouvelles exceptions VBA sont créées dans `src/xlmanage/exceptions.py`
+2. ✅ Toutes héritent de `ExcelManageError`
+3. ✅ Chaque exception a des attributs métier appropriés
+4. ✅ Les exceptions sont exportées dans `__init__.py`
+5. ✅ Les tests couvrent tous les cas d'usage
 
 ## Tâches techniques
 
@@ -298,8 +298,8 @@ def test_vba_workbook_format_error():
 
 ## Définition of Done
 
-- [ ] Les 7 exceptions sont créées avec docstrings complètes
-- [ ] Les exceptions sont exportées dans `__init__.py`
-- [ ] Tous les tests passent (7 tests minimum)
-- [ ] Couverture de code 100% pour les nouvelles exceptions
-- [ ] Le code suit les conventions du projet (type hints, docstrings Google style)
+- [x] Les 7 exceptions sont créées avec docstrings complètes
+- [x] Les exceptions sont exportées dans `__init__.py`
+- [x] Tous les tests passent (7 tests)
+- [x] Couverture de code 100% pour les nouvelles exceptions
+- [x] Le code suit les conventions du projet (type hints, docstrings Google style)
