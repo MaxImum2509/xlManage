@@ -1,6 +1,6 @@
 # Epic 10 - Story 2: Intégrer les commandes optimize dans le CLI
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** utilisateur
 **Je veux** gérer les optimisations Excel depuis le CLI
@@ -8,13 +8,13 @@
 
 ## Critères d'acceptation
 
-1. ⬜ La commande `xlmanage optimize --screen` applique les optimisations d'écran
-2. ⬜ La commande `xlmanage optimize --calculation` applique les optimisations de calcul
-3. ⬜ La commande `xlmanage optimize --all` applique toutes les optimisations
-4. ⬜ La commande `xlmanage optimize --restore` restaure les paramètres originaux
-5. ⬜ La commande `xlmanage optimize --status` affiche l'état actuel
-6. ⬜ La commande `xlmanage optimize --force-calculate` force un recalcul complet
-7. ⬜ Les tests CLI passent pour toutes les options
+1. ✅ La commande `xlmanage optimize --screen` applique les optimisations d'écran
+2. ✅ La commande `xlmanage optimize --calculation` applique les optimisations de calcul
+3. ✅ La commande `xlmanage optimize --all` applique toutes les optimisations
+4. ✅ La commande `xlmanage optimize --restore` restaure les paramètres originaux
+5. ✅ La commande `xlmanage optimize --status` affiche l'état actuel
+6. ✅ La commande `xlmanage optimize --force-calculate` force un recalcul complet
+7. ✅ Les tests CLI passent pour toutes les options
 
 ## Tâches techniques
 
@@ -452,11 +452,52 @@ def test_optimize_multiple_options_error():
 
 ## Définition of Done
 
-- [ ] La commande `optimize` gère toutes les options
-- [ ] `--status` affiche un tableau Rich avec l'état actuel
-- [ ] `--restore` restaure les paramètres avec gestion d'erreur
-- [ ] `--force-calculate` force le recalcul complet
-- [ ] Les options mutuellement exclusives sont validées
-- [ ] Tous les tests CLI passent (7+ tests)
-- [ ] Les messages Rich sont clairs et informatifs
-- [ ] L'aide CLI est complète avec exemples
+- [x] La commande `optimize` gère toutes les options
+- [x] `--status` affiche un tableau Rich avec l'état actuel
+- [x] `--restore` restaure les paramètres avec gestion d'erreur
+- [x] `--force-calculate` force le recalcul complet
+- [x] Les options mutuellement exclusives sont validées
+- [x] Tous les tests CLI passent (12 tests)
+- [x] Les messages Rich sont clairs et informatifs
+- [x] L'aide CLI est complète avec exemples
+
+## Résultats de l'implémentation
+
+**Date de réalisation** : 2026-02-06
+
+### Fichiers modifiés
+
+1. `src/xlmanage/cli.py` - Ajout de la commande optimize et 4 fonctions helpers
+   - Commande optimize avec 7 options
+   - _display_optimization_status()
+   - _restore_optimizations()
+   - _display_applied_optimizations()
+   - _force_calculate()
+
+### Fichiers créés
+
+1. `tests/test_cli_optimize.py` - 12 tests CLI
+
+### Statistiques des tests
+
+- **Tests totaux** : 12
+- **Tests réussis** : 12 (100%)
+- **Couverture CLI** : Amélioration de la couverture de cli.py à 27%
+
+### Options implémentées
+
+1. **--screen** : Optimise l'affichage écran (3 propriétés)
+2. **--calculation** : Optimise le calcul (4 propriétés)
+3. **--all** : Optimise tout (8 propriétés) - option par défaut
+4. **--restore** : Restaure les paramètres sauvegardés
+5. **--status** : Affiche un tableau Rich avec l'état actuel
+6. **--force-calculate** : Force le recalcul complet du classeur actif
+7. **--visible** : Rend Excel visible (combinable avec les autres options)
+
+### Points clés de l'implémentation
+
+1. **Validation des options** : Une seule option principale à la fois
+2. **Option par défaut** : Sans option, applique --all automatiquement
+3. **Affichage Rich** : Tableaux et panels colorés pour une meilleure UX
+4. **Gestion d'erreurs** : Messages clairs avec codes de sortie appropriés
+5. **Imports dynamiques** : Optimizers importés dans la fonction pour éviter les dépendances circulaires

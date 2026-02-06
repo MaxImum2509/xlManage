@@ -18,6 +18,7 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from pathlib import Path
+from typing import cast
 
 import typer
 from rich.console import Console
@@ -357,6 +358,318 @@ def status():
             Panel.fit(
                 f"[red]X[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
                 title="Unexpected Error",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def optimize(
+    screen: bool = typer.Option(
+        False,
+        "--screen",
+        help="Optimiser uniquement l'affichage écran",
+    ),
+    calculation: bool = typer.Option(
+        False,
+        "--calculation",
+        help="Optimiser uniquement le calcul",
+    ),
+    all_opt: bool = typer.Option(
+        False,
+        "--all",
+        help="Appliquer toutes les optimisations",
+    ),
+    restore: bool = typer.Option(
+        False,
+        "--restore",
+        help="Restaurer les paramètres originaux",
+    ),
+    status_opt: bool = typer.Option(
+        False,
+        "--status",
+        help="Afficher l'état actuel des paramètres",
+    ),
+    force_calculate: bool = typer.Option(
+        False,
+        "--force-calculate",
+        help="Forcer le recalcul complet du classeur actif",
+    ),
+    visible: bool = typer.Option(
+        False,
+        "--visible",
+        help="Rendre Excel visible",
+    ),
+) -> None:
+    """Optimise les performances Excel ou affiche l'état actuel.
+
+    Par défaut (sans option), applique toutes les optimisations.
+
+    Exemples:
+
+        xlmanage optimize --screen
+
+        xlmanage optimize --all
+
+        xlmanage optimize --status
+
+        xlmanage optimize --restore
+    """
+    try:
+        from .calculation_optimizer import CalculationOptimizer
+        from .excel_optimizer import ExcelOptimizer
+        from .screen_optimizer import ScreenOptimizer
+    except ImportError:
+        from xlmanage.calculation_optimizer import CalculationOptimizer
+        from xlmanage.excel_optimizer import ExcelOptimizer
+        from xlmanage.screen_optimizer import ScreenOptimizer
+
+    # Validation : une seule option principale à la fois
+    options_count = sum(
+        [screen, calculation, all_opt, restore, status_opt, force_calculate]
+    )
+    if options_count == 0:
+        # Par défaut : --all
+        all_opt = True
+    elif options_count > 1:
+        console.print(
+            "[red]Erreur :[/red] Spécifiez une seule option parmi "
+            "--screen, --calculation, --all, --restore, --status, --force-calculate",
+            style="bold",
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        with ExcelManager(visible=visible) as excel_mgr:
+            excel_mgr.start()
+            app_com = excel_mgr.app
+
+            # --status : afficher l'état actuel
+            if status_opt:
+                _display_optimization_status(app_com, console)
+                return
+
+            # --restore : restaurer les paramètres
+            if restore:
+                _restore_optimizations(app_com, screen, calculation, all_opt, console)
+                return
+
+            # --force-calculate : forcer le recalcul
+            if force_calculate:
+                _force_calculate(app_com, console)
+                return
+
+            # --screen : optimiser l'écran
+            if screen:
+                screen_opt = ScreenOptimizer(app_com)
+                state = screen_opt.apply()
+                _display_applied_optimizations(state, console)
+                return
+
+            # --calculation : optimiser le calcul
+            if calculation:
+                calc_opt = CalculationOptimizer(app_com)
+                state = calc_opt.apply()
+                _display_applied_optimizations(state, console)
+                return
+
+            # --all : tout optimiser
+            if all_opt:
+                excel_opt = ExcelOptimizer(app_com)
+                state = excel_opt.apply()
+                _display_applied_optimizations(state, console)
+                return
+
+    except ExcelConnectionError as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Failed to connect to Excel\n\n[bold]Error:[/bold] {e}",
+                title="Connection Error",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(
+            Panel.fit(
+                f"[red]X[/red] Unexpected error\n\n[bold]Error:[/bold] {e}",
+                title="Error",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+def _display_optimization_status(app_com, console_obj: Console) -> None:
+    """Affiche l'état actuel des paramètres Excel."""
+    try:
+        from .excel_optimizer import ExcelOptimizer
+    except ImportError:
+        from xlmanage.excel_optimizer import ExcelOptimizer
+
+    optimizer = ExcelOptimizer(app_com)
+    settings = optimizer.get_current_settings()
+
+    if not settings:
+        console_obj.print(
+            Panel.fit(
+                "[yellow]i[/yellow] Impossible de lire l'état des paramètres Excel",
+                title="État des optimisations",
+                border_style="yellow",
+            )
+        )
+        return
+
+    table = Table(title="État actuel des optimisations Excel", show_header=True)
+    table.add_column("Propriété", style="cyan", width=25)
+    table.add_column("Valeur actuelle", width=20)
+    table.add_column("Optimisé", justify="center", width=15)
+
+    # Valeurs optimisées attendues
+    optimized_values = {
+        "ScreenUpdating": False,
+        "DisplayStatusBar": False,
+        "EnableAnimations": False,
+        "Calculation": -4135,  # xlCalculationManual
+        "EnableEvents": False,
+        "DisplayAlerts": False,
+        "AskToUpdateLinks": False,
+        "Iteration": False,
+    }
+
+    for prop, value in settings.items():
+        # Formater la valeur
+        if isinstance(value, bool):
+            value_str = "Oui" if value else "Non"
+        elif prop == "Calculation":
+            calc_names = {-4135: "Manuel", -4105: "Automatique"}
+            value_str = calc_names.get(cast(int, value), str(value))
+        else:
+            value_str = str(value)
+
+        # Vérifier si optimisé
+        is_optimized = value == optimized_values.get(prop)
+        optimized_str = "[green]Oui[/green]" if is_optimized else "[yellow]Non[/yellow]"
+
+        table.add_row(prop, value_str, optimized_str)
+
+    console_obj.print(table)
+
+
+def _restore_optimizations(
+    app_com, screen: bool, calculation: bool, all_opt: bool, console_obj: Console
+) -> None:
+    """Restaure les paramètres optimisés."""
+    try:
+        from .calculation_optimizer import CalculationOptimizer
+        from .excel_optimizer import ExcelOptimizer
+        from .screen_optimizer import ScreenOptimizer
+    except ImportError:
+        from xlmanage.calculation_optimizer import CalculationOptimizer
+        from xlmanage.excel_optimizer import ExcelOptimizer
+        from xlmanage.screen_optimizer import ScreenOptimizer
+
+    try:
+        optimizer: ScreenOptimizer | CalculationOptimizer | ExcelOptimizer
+        if screen:
+            optimizer = ScreenOptimizer(app_com)
+        elif calculation:
+            optimizer = CalculationOptimizer(app_com)
+        else:  # all_opt
+            optimizer = ExcelOptimizer(app_com)
+
+        optimizer.restore()
+
+        console_obj.print(
+            Panel.fit(
+                "[green]OK[/green] Paramètres restaurés avec succès",
+                title="Restauration",
+                border_style="green",
+            )
+        )
+
+    except RuntimeError as e:
+        console_obj.print(
+            Panel.fit(
+                f"[yellow]i[/yellow] {e}\n\n"
+                "Les optimisations doivent d'abord être appliquées avec "
+                "--screen, --calculation ou --all",
+                title="Attention",
+                border_style="yellow",
+            )
+        )
+
+
+def _display_applied_optimizations(state, console_obj: Console) -> None:
+    """Affiche un résumé des optimisations appliquées."""
+    optimizer_names = {
+        "screen": "Écran",
+        "calculation": "Calcul",
+        "all": "Toutes les optimisations",
+    }
+
+    optimizer_name = optimizer_names.get(state.optimizer_type, state.optimizer_type)
+
+    # Compter les propriétés optimisées
+    if state.optimizer_type == "screen":
+        count = len(state.screen)
+    elif state.optimizer_type == "calculation":
+        count = len(state.calculation)
+    else:
+        count = len(state.full)
+
+    message = (
+        f"[green]OK[/green] Optimisations appliquées avec succès\n\n"
+        f"Type : [bold]{optimizer_name}[/bold]\n"
+        f"Propriétés modifiées : {count}\n"
+        f"Appliqué à : {state.applied_at}\n\n"
+        "[dim]Les optimisations resteront actives "
+        "jusqu'à l'appel de --restore[/dim]"
+    )
+
+    console_obj.print(
+        Panel.fit(
+            message,
+            title="Optimisation Excel",
+            border_style="green",
+        )
+    )
+
+
+def _force_calculate(app_com, console_obj: Console) -> None:
+    """Force le recalcul complet du classeur actif."""
+    try:
+        wb = app_com.ActiveWorkbook
+        if wb is None:
+            console_obj.print(
+                Panel.fit(
+                    "[yellow]i[/yellow] Aucun classeur actif",
+                    title="Recalcul",
+                    border_style="yellow",
+                )
+            )
+            return
+
+        console_obj.print("[dim]Recalcul en cours...[/dim]")
+
+        # Forcer le recalcul complet
+        app_com.CalculateFullRebuild()
+
+        console_obj.print(
+            Panel.fit(
+                f"[green]OK[/green] Recalcul complet terminé\n\n"
+                f"Classeur : [bold]{wb.Name}[/bold]",
+                title="Recalcul forcé",
+                border_style="green",
+            )
+        )
+
+    except Exception as e:
+        console_obj.print(
+            Panel.fit(
+                f"[red]X[/red] Erreur lors du recalcul\n\n[bold]Error:[/bold] {e}",
+                title="Erreur",
                 border_style="red",
             )
         )
