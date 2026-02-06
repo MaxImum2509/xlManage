@@ -18,6 +18,7 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import gc
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +39,9 @@ except ImportError:
 import subprocess
 
 from .exceptions import ExcelConnectionError, ExcelInstanceNotFoundError, ExcelRPCError
+
+# Configure module logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -353,6 +357,71 @@ class ExcelManager:
         gc.collect()
 
         return stopped_pids
+
+    def force_kill(self, pid: int) -> None:
+        """Force-kill an Excel instance via taskkill.
+
+        **WARNING**: This method brutally terminates the process without
+        saving workbooks. Use ONLY when clean shutdown has failed and the
+        instance is zombie.
+
+        Uses: taskkill /f /pid <pid>
+
+        Args:
+            pid: Process ID of the instance to terminate
+
+        Raises:
+            ExcelInstanceNotFoundError: If PID doesn't exist
+            RuntimeError: If taskkill command fails
+
+        Example:
+            >>> mgr = ExcelManager()
+            >>> try:
+            ...     mgr.stop_instance(12345)
+            ... except ExcelRPCError:
+            ...     # Clean shutdown failed, force kill
+            ...     mgr.force_kill(12345)
+        """
+        # Log a warning (dangerous operation)
+        logger.warning(
+            f"Force killing Excel instance PID {pid}. "
+            "This will terminate the process without saving workbooks."
+        )
+
+        try:
+            # Execute taskkill /f /pid
+            result = subprocess.run(
+                ["taskkill", "/f", "/pid", str(pid)],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            )
+
+            # Verify success in stdout
+            if "SUCCESS" not in result.stdout:
+                raise RuntimeError(f"taskkill failed: {result.stdout}")
+
+            logger.info(f"Successfully force-killed Excel instance PID {pid}")
+
+        except subprocess.CalledProcessError as e:
+            # taskkill failed (PID not found, permissions, etc.)
+            if "not found" in e.stdout or "not found" in e.stderr:
+                raise ExcelInstanceNotFoundError(
+                    str(pid), "Process not found or not running"
+                ) from e
+            else:
+                raise RuntimeError(
+                    f"Failed to kill process {pid}: {e.stderr or e.stdout}"
+                ) from e
+
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Timeout while trying to kill process {pid}")
+
+        except FileNotFoundError:
+            raise RuntimeError(
+                "taskkill command not found. This feature requires Windows."
+            )
 
     def get_running_instance(self) -> InstanceInfo | None:
         """Get the active Excel instance.

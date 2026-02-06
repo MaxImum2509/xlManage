@@ -1,6 +1,6 @@
 # Epic 11 - Story 3: Implémenter force_kill()
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** utilisateur
 **Je veux** pouvoir forcer l'arrêt d'une instance Excel zombie
@@ -16,11 +16,11 @@ La méthode `force_kill()` est le **dernier recours** : elle utilise `taskkill /
 
 ## Critères d'acceptation
 
-1. ⬜ La méthode `force_kill()` est implémentée
-2. ⬜ Elle utilise `taskkill /f /pid` (Windows)
-3. ⬜ Une exception est levée si le PID n'existe pas
-4. ⬜ Un warning est logué car c'est une opération dangereuse
-5. ⬜ Les tests vérifient l'appel à subprocess
+1. ✅ La méthode `force_kill()` est implémentée
+2. ✅ Elle utilise `taskkill /f /pid` (Windows)
+3. ✅ Une exception est levée si le PID n'existe pas
+4. ✅ Un warning est logué car c'est une opération dangereuse
+5. ✅ Les tests vérifient l'appel à subprocess
 
 ## Tâches techniques
 
