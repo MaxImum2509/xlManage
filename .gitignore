@@ -10,7 +10,7 @@ _tmp*/
 venv/
 
 # Ignorer les fichiers de configuration de l'IDE
-.sublime
+.sublime/
 .idea/
 .vscode/
 *.swp
