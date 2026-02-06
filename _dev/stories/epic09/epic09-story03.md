@@ -1,6 +1,6 @@
 # Epic 9 - Story 3: Implémenter VBAManager avec dataclass et __init__
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** développeur
 **Je veux** avoir un VBAManager initialisé correctement avec sa dataclass
@@ -8,11 +8,11 @@
 
 ## Critères d'acceptation
 
-1. ⬜ La dataclass `VBAModuleInfo` est créée
-2. ⬜ Les constantes VBA sont définies (types, encodage)
-3. ⬜ La classe `VBAManager` est créée avec `__init__`
-4. ⬜ Le manager utilise l'injection de dépendance avec ExcelManager
-5. ⬜ Les tests du constructeur passent
+1. ✅ La dataclass `VBAModuleInfo` est créée
+2. ✅ Les constantes VBA sont définies (types, encodage)
+3. ✅ La classe `VBAManager` est créée avec `__init__`
+4. ✅ Le manager utilise l'injection de dépendance avec ExcelManager
+5. ✅ Les tests du constructeur passent
 
 ## Tâches techniques
 
@@ -234,10 +234,10 @@ def test_vba_manager_app_property_not_started():
 
 ## Définition of Done
 
-- [ ] La dataclass `VBAModuleInfo` est créée avec tous ses champs
-- [ ] Les constantes VBA sont définies et documentées
-- [ ] La classe `VBAManager` avec `__init__` est implémentée
-- [ ] La propriété `app` fonctionne correctement
-- [ ] Tous les tests passent (5+ tests)
-- [ ] Couverture de code 100% pour __init__ et la dataclass
-- [ ] Les docstrings sont complètes avec exemples
+- [x] La dataclass `VBAModuleInfo` est créée avec tous ses champs
+- [x] Les constantes VBA sont définies et documentées
+- [x] La classe `VBAManager` avec `__init__` est implémentée
+- [x] La propriété `app` fonctionne correctement
+- [x] Tous les tests passent (5+ tests)
+- [x] Couverture de code 100% pour __init__ et la dataclass
+- [x] Les docstrings sont complètes avec exemples

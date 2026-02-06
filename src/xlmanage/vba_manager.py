@@ -18,12 +18,50 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import pywintypes
 from win32com.client import CDispatch
 
-from .exceptions import VBAImportError, VBAProjectAccessError, VBAWorkbookFormatError
+from .excel_manager import ExcelManager
+from .exceptions import (
+    VBAImportError,
+    VBAProjectAccessError,
+    VBAWorkbookFormatError,
+)
+
+
+@dataclass
+class VBAModuleInfo:
+    """Informations sur un module VBA.
+
+    Attributes:
+        name: Nom du module (ex: "Module1", "MyClass")
+        module_type: Type du module ("standard", "class", "userform", "document")
+        lines_count: Nombre de lignes de code dans le module
+        has_predeclared_id: True si PredeclaredId activé (classes uniquement)
+    """
+
+    name: str
+    module_type: str
+    lines_count: int
+    has_predeclared_id: bool = False
+
+
+# Types de composants VBA (constantes Excel)
+VBEXT_CT_STD_MODULE: int = 1  # Module standard (.bas)
+VBEXT_CT_CLASS_MODULE: int = 2  # Module de classe (.cls)
+VBEXT_CT_MS_FORM: int = 3  # UserForm (.frm + .frx)
+VBEXT_CT_DOCUMENT: int = 100  # Module de document (ThisWorkbook, Sheet1)
+
+# Mapping type code -> nom lisible
+VBA_TYPE_NAMES: dict[int, str] = {
+    1: "standard",
+    2: "class",
+    3: "userform",
+    100: "document",
+}
 
 # Extension to module type mapping
 EXTENSION_TO_TYPE: dict[str, str] = {
@@ -31,6 +69,9 @@ EXTENSION_TO_TYPE: dict[str, str] = {
     ".cls": "class",
     ".frm": "userform",
 }
+
+# Encodage obligatoire pour les fichiers VBA
+VBA_ENCODING: str = "windows-1252"
 
 
 def _get_vba_project(wb: CDispatch) -> CDispatch:
@@ -165,3 +206,51 @@ def _parse_class_module(file_path: Path) -> tuple[str, bool, str]:
         code_content = content[code_start:].strip()
 
     return module_name, predeclared_id, code_content
+
+
+class VBAManager:
+    """Gestionnaire des modules VBA.
+
+    Permet d'importer, exporter, lister et supprimer des modules VBA
+    dans les classeurs Excel. Nécessite que le Trust Center autorise
+    l'accès programmatique aux projets VBA.
+
+    Important:
+        - Le classeur doit être au format .xlsm pour supporter les macros
+        - L'option "Trust access to the VBA project object model" doit
+          être activée dans Excel Trust Center
+
+    Example:
+        >>> with ExcelManager() as excel_mgr:
+        ...     excel_mgr.start()
+        ...     vba_mgr = VBAManager(excel_mgr)
+        ...     modules = vba_mgr.list_modules()
+        ...     for module in modules:
+        ...         print(f"{module.name}: {module.module_type}")
+    """
+
+    def __init__(self, excel_manager: ExcelManager):
+        """Initialize VBA manager.
+
+        Args:
+            excel_manager: Instance d'ExcelManager déjà démarrée.
+                Utilisé pour accéder à l'objet COM Application.
+
+        Example:
+            >>> excel_mgr = ExcelManager()
+            >>> excel_mgr.start()
+            >>> vba_mgr = VBAManager(excel_mgr)
+        """
+        self._mgr = excel_manager
+
+    @property
+    def app(self) -> CDispatch:
+        """Objet COM Excel.Application.
+
+        Returns:
+            CDispatch: Application Excel active
+
+        Raises:
+            RuntimeError: Si Excel n'est pas démarré
+        """
+        return self._mgr.app
