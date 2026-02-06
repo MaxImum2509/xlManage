@@ -17,11 +17,14 @@ You should have received a copy of the GNU General Public License
 along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import gc
+import re
 from dataclasses import dataclass
 from typing import Any
 
 try:
     import pythoncom
+    import pywintypes
     import win32com.client
     from win32com.client import CDispatch
 except ImportError:
@@ -29,11 +32,12 @@ except ImportError:
     # This is useful for testing and documentation purposes
     CDispatch = Any
     pythoncom = None
+    pywintypes = None
 
 # Import subprocess for process management
 import subprocess
 
-from .exceptions import ExcelConnectionError, ExcelRPCError
+from .exceptions import ExcelConnectionError, ExcelInstanceNotFoundError, ExcelRPCError
 
 
 @dataclass
@@ -174,60 +178,181 @@ class ExcelManager:
     def stop(self, save: bool = True) -> None:
         """Stop the managed Excel instance properly.
 
-        Protocol:
-        1. app.DisplayAlerts = False
-        2. Close each workbook with SaveChanges=save
-        3. Delete all workbook references
-        4. Delete app reference
-        5. Run garbage collection
-        6. Set self._app = None
+        Shutdown protocol:
+        1. Disable alerts
+        2. Close all workbooks
+        3. Release COM references (del)
+        4. Garbage collection
+        5. Set _app to None
+
+        IMPORTANT: NEVER call app.Quit() - causes RPC error 0x800706BE.
 
         Args:
-            save: If True, save each workbook before closing.
+            save: If True, save each workbook before closing
+
+        Example:
+            >>> mgr = ExcelManager()
+            >>> mgr.start()
+            >>> # ... work ...
+            >>> mgr.stop(save=True)
         """
         if self._app is None:
+            # Already stopped, nothing to do
             return
 
         try:
-            # Suppress alerts to avoid dialogs
+            # 1. Disable alerts (avoid confirmation dialogs)
             self._app.DisplayAlerts = False
 
-            # Close all workbooks
-            for wb in self._app.Workbooks:
+            # 2. Close all workbooks
+            workbooks = []
+            try:
+                # Copy list to avoid iteration issues
+                for wb in self._app.Workbooks:
+                    workbooks.append(wb)
+            except (pywintypes.com_error, Exception):
+                # Error during enumeration, ignore
+                pass
+
+            for wb in workbooks:
                 try:
                     wb.Close(SaveChanges=save)
-                except Exception:
-                    # Ignore errors when closing workbooks
-                    pass
-                finally:
-                    # Clean up references
                     del wb
+                except (pywintypes.com_error, Exception):
+                    # Workbook already closed or inaccessible
+                    continue
 
-            # Clean up application reference
+            # 3. Release main reference
             del self._app
-            self._app = None
 
-            # Force garbage collection to release COM objects
-            import gc
+        except (pywintypes.com_error, Exception):
+            # RPC error (server disconnected), ignore
+            # Instance is probably already dead
+            pass
 
+        finally:
+            # 4. Garbage collection to release all COM references
             gc.collect()
 
-        except Exception as e:
-            # If we get here, try to force cleanup
-            try:
-                del self._app
-            except Exception:
-                pass
+            # 5. Mark as stopped
             self._app = None
 
-            if hasattr(e, "hresult"):
-                raise ExcelRPCError(
-                    getattr(e, "hresult"), f"Error stopping Excel: {str(e)}"
-                ) from e
-            else:
-                raise ExcelRPCError(
-                    0x800706BE, f"Error stopping Excel: {str(e)}"
-                ) from e
+    def stop_instance(self, pid: int, save: bool = True) -> None:
+        """Stop an Excel instance identified by its PID.
+
+        Connects to the instance via ROT or HWND, then applies
+        the stop() protocol.
+
+        Args:
+            pid: Process ID of the target Excel instance
+            save: If True, save before closing
+
+        Raises:
+            ExcelInstanceNotFoundError: If PID doesn't exist or is not Excel
+            ExcelRPCError: If instance is disconnected
+
+        Example:
+            >>> mgr = ExcelManager()
+            >>> mgr.stop_instance(12345, save=False)
+        """
+        # Enumerate all instances
+        instances = enumerate_excel_instances()
+
+        # Find instance with the right PID
+        target_app = None
+        for app, info in instances:
+            if info.pid == pid:
+                target_app = app
+                break
+
+        if target_app is None:
+            # Fallback: check via tasklist if PID exists
+            all_pids = enumerate_excel_pids()
+            if pid not in all_pids:
+                raise ExcelInstanceNotFoundError(
+                    str(pid), "Process ID not found or not an Excel instance"
+                )
+
+            # PID exists but inaccessible via COM
+            raise ExcelRPCError(
+                0x800706BE, f"Excel instance PID {pid} is disconnected or inaccessible"
+            )
+
+        # Apply shutdown protocol
+        try:
+            target_app.DisplayAlerts = False
+
+            # Close all workbooks
+            workbooks = []
+            for wb in target_app.Workbooks:
+                workbooks.append(wb)
+
+            for wb in workbooks:
+                try:
+                    wb.Close(SaveChanges=save)
+                    del wb
+                except (pywintypes.com_error, Exception):
+                    continue
+
+            # Release reference
+            del target_app
+
+        except pywintypes.com_error as e:
+            # RPC error
+            raise ExcelRPCError(e.hresult, f"RPC error during shutdown: {e}") from e
+
+        finally:
+            gc.collect()
+
+    def stop_all(self, save: bool = True) -> list[int]:
+        """Stop all active Excel instances.
+
+        Enumerates via ROT and applies stop_instance() for each.
+
+        Args:
+            save: If True, save before closing
+
+        Returns:
+            list[int]: List of PIDs stopped successfully
+
+        Example:
+            >>> mgr = ExcelManager()
+            >>> stopped = mgr.stop_all(save=True)
+            >>> print(f"{len(stopped)} instances stopped")
+        """
+        # Enumerate all instances
+        instances = enumerate_excel_instances()
+
+        stopped_pids: list[int] = []
+
+        for app, info in instances:
+            try:
+                # Apply shutdown protocol
+                app.DisplayAlerts = False
+
+                workbooks = []
+                for wb in app.Workbooks:
+                    workbooks.append(wb)
+
+                for wb in workbooks:
+                    try:
+                        wb.Close(SaveChanges=save)
+                        del wb
+                    except (pywintypes.com_error, Exception):
+                        continue
+
+                del app
+
+                stopped_pids.append(info.pid)
+
+            except (pywintypes.com_error, Exception):
+                # Instance disconnected, ignore
+                continue
+
+        # Final garbage collection
+        gc.collect()
+
+        return stopped_pids
 
     def get_running_instance(self) -> InstanceInfo | None:
         """Get the active Excel instance.
@@ -254,165 +379,229 @@ class ExcelManager:
     def list_running_instances(self) -> list[InstanceInfo]:
         """Enumerate all running Excel instances.
 
+        Uses ROT as priority, then fallback to tasklist if ROT fails.
+
         Returns:
-            List of InstanceInfo for all running Excel instances.
+            list[InstanceInfo]: List of instances with their information
+
+        Example:
+            >>> mgr = ExcelManager()
+            >>> instances = mgr.list_running_instances()
+            >>> for inst in instances:
+            ...     print(f"PID {inst.pid}: {inst.workbooks_count} classeurs")
 
         Note:
             Uses multiple methods to find instances:
             1. Running Object Table (ROT) enumeration
             2. Fallback to tasklist PID enumeration
         """
-        instances = []
+        # Try via ROT
+        rot_instances = enumerate_excel_instances()
 
-        # Method 1: Try ROT enumeration
+        if rot_instances:
+            # Extract just the InstanceInfo
+            return [info for app, info in rot_instances]
+
+        # Fallback: tasklist to get PIDs
         try:
-            for app in enumerate_excel_instances():
-                try:
-                    info = self.get_instance_info(app)
-                    instances.append(info)
-                except Exception:
-                    continue
-        except Exception:
-            pass
+            pids = enumerate_excel_pids()
 
-        # Method 2: Fallback to PID enumeration
-        if not instances:
-            try:
-                for pid in enumerate_excel_pids():
-                    try:
-                        app = connect_by_pid(pid)
-                        if app:
-                            info = self.get_instance_info(app)
-                            instances.append(info)
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+            # Convert PIDs to InstanceInfo (limited info)
+            instances = []
+            for pid in pids:
+                # Cannot get visible/workbooks_count without COM
+                info = InstanceInfo(
+                    pid=pid,
+                    visible=False,  # Unknown
+                    workbooks_count=0,  # Unknown
+                    hwnd=0,  # Unknown
+                )
+                instances.append(info)
 
-        return instances
+            return instances
+
+        except RuntimeError:
+            # Fallback also failed, return empty list
+            return []
 
 
-def enumerate_excel_instances() -> list[CDispatch]:
+def enumerate_excel_instances() -> list[tuple[CDispatch, InstanceInfo]]:
     """Enumerate Excel instances via Running Object Table (ROT).
 
+    The Windows ROT contains all active COM objects. We filter for
+    Excel.Application instances.
+
     Returns:
-        List of Excel Application COM objects found in ROT.
+        list[tuple[CDispatch, InstanceInfo]]: List of (app, info) for each instance
 
     Note:
-        This method uses the Windows Running Object Table to find
-        all registered Excel instances.
+        This function may fail if ROT access is blocked. Use
+        enumerate_excel_pids() as fallback.
     """
-    instances = []
+    instances: list[tuple[CDispatch, InstanceInfo]] = []
 
     try:
         # Get Running Object Table
         rot = pythoncom.GetRunningObjectTable()
+        # Enumerate monikers (COM object identifiers)
+        monikers = rot.EnumRunning()
 
-        # Enumerate all running objects
-        for moniker in rot:
+        for moniker in monikers:
             try:
-                # Check if it's an Excel instance
-                if "Excel.Application" in str(moniker):
-                    obj = rot.GetObject(moniker)
-                    if obj and hasattr(obj, "Application"):
-                        instances.append(obj.Application)
-            except Exception:
+                # Get moniker name
+                ctx = pythoncom.CreateBindCtx(0)
+                name = moniker.GetDisplayName(ctx, None)
+
+                # Filter for Excel.Application
+                # Name contains "!Microsoft_Excel_Application" or similar
+                if "Excel.Application" not in name:
+                    continue
+
+                # Get COM object from ROT
+                obj = rot.GetObject(moniker)
+
+                # Cast to CDispatch
+                app = win32com.client.Dispatch(
+                    obj.QueryInterface(pythoncom.IID_IDispatch)
+                )
+
+                # Extract instance info
+                info = _get_instance_info_from_app(app)
+
+                instances.append((app, info))
+
+            except (pywintypes.com_error, Exception):
+                # Instance inaccessible or disconnected, skip
                 continue
-    except Exception:
-        pass
+
+    except (pywintypes.com_error, Exception):
+        # ROT inaccessible, return empty list (fallback needed)
+        return []
 
     return instances
+
+
+def _get_instance_info_from_app(app: CDispatch) -> InstanceInfo:
+    """Extract InstanceInfo from an Application object.
+
+    Args:
+        app: Excel Application COM object
+
+    Returns:
+        InstanceInfo: Instance information
+    """
+    import ctypes
+
+    # Get HWND (window handle)
+    hwnd = app.Hwnd
+
+    # Extract PID from HWND via Windows API
+    process_id = ctypes.c_ulong()
+    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
+    pid = process_id.value
+
+    # Get other info
+    visible = app.Visible
+    workbooks_count = app.Workbooks.Count
+
+    return InstanceInfo(
+        pid=pid, visible=visible, workbooks_count=workbooks_count, hwnd=hwnd
+    )
 
 
 def enumerate_excel_pids() -> list[int]:
     """Fallback: Enumerate Excel PIDs via tasklist command.
 
+    Used when ROT is not accessible. Returns only PIDs, not COM objects.
+
     Returns:
-        List of Excel process IDs found via tasklist.
+        list[int]: List of EXCEL.EXE process IDs
+
+    Raises:
+        RuntimeError: If tasklist fails (command not found)
 
     Note:
         This is a fallback method when ROT enumeration fails.
         Uses Windows tasklist command to find EXCEL.EXE processes.
     """
-    pids = []
-
     try:
-        # Use tasklist to find Excel processes
+        # Call tasklist with filter for EXCEL.EXE
         result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq EXCEL.EXE", "/FO", "CSV", "/NH"],
+            ["tasklist", "/fi", "imagename eq EXCEL.EXE", "/fo", "csv", "/nh"],
             capture_output=True,
             text=True,
             check=True,
+            timeout=10,
         )
 
+        pids: list[int] = []
+
         # Parse CSV output
+        # Format: "EXCEL.EXE","12345","Console","1","123,456 K"
         for line in result.stdout.strip().split("\n"):
-            if line:
-                parts = line.split(",")
-                if len(parts) >= 2:
-                    try:
-                        pid = int(parts[1].strip('"'))
-                        pids.append(pid)
-                    except ValueError:
-                        continue
-    except (subprocess.CalledProcessError, FileNotFoundError, Exception):
-        pass
-
-    return pids
-
-
-def connect_by_pid(pid: int) -> CDispatch | None:
-    """Connect to Excel instance by process ID.
-
-    Args:
-        pid: Process ID of Excel instance
-
-    Returns:
-        Excel Application COM object if found, None otherwise.
-
-    Note:
-        This method attempts to connect to an Excel instance
-        by its process ID using various techniques.
-    """
-    try:
-        # Try to find the instance via ROT first
-        for app in enumerate_excel_instances():
-            try:
-                # Get the PID from the application
-                app_pid = app.Hwnd  # Simplified - in practice need Windows API
-                if app_pid == pid:
-                    return app
-            except Exception:
+            if not line or "INFO:" in line:
                 continue
 
-        # Fallback: Try to get any available instance
-        # Note: This is a simplified approach
-        return win32com.client.Dispatch("Excel.Application")
-    except Exception:
-        return None
+            # Extract PID (2nd column)
+            match = re.search(r'"EXCEL\.EXE","(\d+)"', line)
+            if match:
+                pid = int(match.group(1))
+                pids.append(pid)
+
+        return pids
+
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Timeout lors de l'énumération des processus Excel")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Échec de tasklist: {e}")
+    except FileNotFoundError:
+        raise RuntimeError("Commande tasklist introuvable (Windows requis)")
 
 
 def connect_by_hwnd(hwnd: int) -> CDispatch | None:
     """Connect to Excel instance by window handle.
 
+    Used when instance is not in ROT but is still active.
+
     Args:
-        hwnd: Window handle of Excel instance
+        hwnd: Window handle (HWND)
 
     Returns:
-        Excel Application COM object if found, None otherwise.
+        CDispatch | None: Excel Application COM object, or None if failed
 
     Note:
         This method attempts to connect to an Excel instance
-        by its window handle using Windows API functions.
+        by its window handle using Windows Accessibility API.
     """
+    import ctypes
+    from ctypes import c_void_p
+    from ctypes.wintypes import DWORD
+
     try:
-        # Try to find the instance with matching HWND
-        for app in enumerate_excel_instances():
-            try:
-                if app.Hwnd == hwnd:
-                    return app
-            except Exception:
-                continue
-        return None
+        # Load oleacc.dll (Accessibility API)
+        oleacc = ctypes.windll.oleacc
+
+        # Constants
+        objid_nativeom = -16  # ID for native Office object
+
+        # Get IDispatch from HWND
+        ptr = c_void_p()
+        result = oleacc.AccessibleObjectFromWindow(
+            hwnd,
+            DWORD(objid_nativeom),
+            ctypes.byref(pythoncom.IID_IDispatch),
+            ctypes.byref(ptr),
+        )
+
+        if result != 0 or not ptr:
+            return None
+
+        # Convert IDispatch to CDispatch
+        dispatch = pythoncom.ObjectFromLresult(ptr.value, pythoncom.IID_IDispatch, 0)
+        app = win32com.client.Dispatch(dispatch)
+
+        return app
+
     except Exception:
+        # Connection failed, return None
         return None

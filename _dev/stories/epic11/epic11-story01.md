@@ -1,6 +1,6 @@
 # Epic 11 - Story 1: Implémenter les fonctions d'énumération Excel (ROT + tasklist)
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** développeur
 **Je veux** des fonctions pour énumérer les instances Excel actives
@@ -16,11 +16,11 @@ Pour arrêter des instances Excel, il faut d'abord pouvoir les lister. Excel peu
 
 ## Critères d'acceptation
 
-1. ⬜ La fonction `enumerate_excel_instances()` énumère via le ROT
-2. ⬜ La fonction `enumerate_excel_pids()` énumère via tasklist (fallback)
-3. ⬜ La fonction `connect_by_hwnd()` se connecte à une instance par handle
-4. ⬜ La méthode `list_running_instances()` dans ExcelManager utilise ces fonctions
-5. ⬜ Les tests couvrent l'énumération ROT et le fallback tasklist
+1. ✅ La fonction `enumerate_excel_instances()` énumère via le ROT
+2. ✅ La fonction `enumerate_excel_pids()` énumère via tasklist (fallback)
+3. ✅ La fonction `connect_by_hwnd()` se connecte à une instance par handle
+4. ✅ La méthode `list_running_instances()` dans ExcelManager utilise ces fonctions
+5. ✅ Les tests couvrent l'énumération ROT et le fallback tasklist
 
 ## Tâches techniques
 
