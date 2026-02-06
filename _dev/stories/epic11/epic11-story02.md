@@ -1,6 +1,6 @@
 # Epic 11 - Story 2: Implémenter stop(), stop_instance() et stop_all()
 
-**Statut** : ⏳ À faire
+**Statut** : ✅ Terminé
 
 **En tant que** utilisateur
 **Je veux** arrêter proprement les instances Excel
@@ -21,12 +21,12 @@ Excel se ferme automatiquement quand toutes les références COM sont libérées
 
 ## Critères d'acceptation
 
-1. ⬜ La méthode `stop()` arrête l'instance gérée par ExcelManager
-2. ⬜ La méthode `stop_instance(pid)` arrête une instance spécifique
-3. ⬜ La méthode `stop_all()` arrête toutes les instances Excel
-4. ⬜ Le paramètre `save` fonctionne correctement
-5. ⬜ **AUCUN** appel à `app.Quit()` dans le code
-6. ⬜ Les tests vérifient la libération ordonnée des références
+1. ✅ La méthode `stop()` arrête l'instance gérée par ExcelManager
+2. ✅ La méthode `stop_instance(pid)` arrête une instance spécifique
+3. ✅ La méthode `stop_all()` arrête toutes les instances Excel
+4. ✅ Le paramètre `save` fonctionne correctement
+5. ✅ **AUCUN** appel à `app.Quit()` dans le code
+6. ✅ Les tests vérifient la libération ordonnée des références
 
 ## Tâches techniques
 
