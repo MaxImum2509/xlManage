@@ -1,6 +1,8 @@
 # Epic 13 - Story 5: Corriger les 28 tests en echec
 
-**Statut** : A faire
+**Statut** : En cours - Analyse terminee
+
+**Date debut** : 2026-02-07
 
 **Priorite** : P2 - Important
 
@@ -124,3 +126,75 @@ Si la couverture est encore insuffisante, identifier les modules sous le seuil e
 - [ ] 0 tests en echec
 - [ ] Couverture >= 90%
 - [ ] `pytest` sort avec exit code 0
+
+---
+
+## Rapport d'analyse (2026-02-07)
+
+### Etat actuel des tests
+
+**Total d'echecs identifies** : 35 tests (contre 28 attendus)
+
+**Repartition** :
+- `test_excel_manager.py` : 16 echecs (17 attendus)
+- `test_cli.py` : 14 echecs (11 attendus + 6 nouveaux sur tables)
+
+**Nouveaux echecs** : 6 tests sur les tables (TestTableCommands) dus a la Story 1 non implementee
+
+### Causes racines identifiees
+
+#### 1. Fonctions utilitaires manquantes dans `excel_manager.py`
+
+**Probleme** : Les tests referencent `connect_by_pid()` qui n'existe pas
+
+**Tests impactes** : 6 tests (connect_by_pid_*)
+
+**Fonctions existantes** :
+- `enumerate_excel_instances()` ✅
+- `enumerate_excel_pids()` ✅
+- `connect_by_hwnd()` ✅
+- `connect_by_pid()` ❌ (manquante)
+
+**Solution** :
+- Option A : Implementer `connect_by_pid()` selon architecture.md
+- Option B : Supprimer les tests obsoletes si la fonction n'est plus necessaire
+
+#### 2. Mocks incorrects apres refactorisation
+
+**Probleme** : Les tests mockent des fonctions avec des signatures obsoletes
+
+**Tests impactes** :
+- `test_list_running_instances_*` (5 tests)
+- `test_enumerate_excel_*` (3 tests)
+- `test_connect_by_hwnd_*` (2 tests)
+
+**Solution** : Mettre a jour les mocks pour correspondre aux signatures actuelles
+
+#### 3. Story 1 non implementee
+
+**Probleme** : `table_manager.py` n'est pas conforme a l'architecture
+
+**Tests impactes** : 6 tests TestTableCommands
+
+**Solution** : Implementer la Story 1 avant de corriger ces tests
+
+#### 4. Tests CLI stop
+
+**Probleme** : Mocks de la commande stop non alignes avec l'implementation
+
+**Tests impactes** : 11 tests TestStopCommand
+
+**Solution** : Mettre a jour les mocks CLI pour correspondre aux methodes ExcelManager
+
+### Recommandations
+
+**Priorite 1** : Corriger les 16 tests `test_excel_manager.py` (hors Story 1)
+**Priorite 2** : Corriger les 11 tests `test_cli.py` TestStopCommand
+**Priorite 3** : Implementer Story 1 puis corriger les 6 tests table
+**Priorite 4** : Implementer Story 1 puis corriger les 2 tests integration CLI
+
+### Actions requises
+
+1. Decider si `connect_by_pid()` doit etre implementee ou les tests supprimes
+2. Mettre a jour les mocks pour correspondre aux signatures actuelles
+3. Implementer la Story 1 avant de finaliser la Story 5
