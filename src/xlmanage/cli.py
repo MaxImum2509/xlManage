@@ -1494,7 +1494,7 @@ def table_create(
                     f"[green]OK[/green] Table créée avec succès\n\n"
                     f"[bold]Nom :[/bold] {info.name}\n"
                     f"[bold]Feuille :[/bold] {info.worksheet_name}\n"
-                    f"[bold]Plage :[/bold] {info.range_ref}\n"
+                    f"[bold]Plage :[/bold] {info.range_address}\n"
                     f"[bold]Lignes :[/bold] {info.rows_count}\n"
                     f"[bold]{workbook_info}[/bold]",
                     title="Table créée",
@@ -1707,7 +1707,7 @@ def table_list(
                 table.add_row(
                     info.name,
                     info.worksheet_name,
-                    info.range_ref,
+                    info.range_address,
                     str(info.rows_count),
                 )
 

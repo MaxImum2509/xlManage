@@ -45,40 +45,43 @@ class TestTableInfo:
         info = TableInfo(
             name="tbl_Sales",
             worksheet_name="Data",
-            range_ref="A1:D100",
-            header_row_range="A1:D1",
+            range_address="$A$1:$D$100",
+            columns=["Col1", "Col2", "Col3", "Col4"],
             rows_count=99,
+            header_row="$A$1:$D$1",
         )
 
         assert info.name == "tbl_Sales"
         assert info.worksheet_name == "Data"
-        assert info.range_ref == "A1:D100"
-        assert info.header_row_range == "A1:D1"
+        assert info.range_address == "$A$1:$D$100"
+        assert info.columns == ["Col1", "Col2", "Col3", "Col4"]
         assert info.rows_count == 99
+        assert info.header_row == "$A$1:$D$1"
 
     def test_table_info_zero_rows(self):
         """Test TableInfo with zero data rows."""
         info = TableInfo(
             name="tbl_Empty",
             worksheet_name="Sheet1",
-            range_ref="A1:D1",
-            header_row_range="A1:D1",
+            range_address="$A$1:$D$1",
+            columns=["Col1", "Col2", "Col3", "Col4"],
             rows_count=0,
+            header_row="$A$1:$D$1",
         )
 
         assert info.rows_count == 0
 
     def test_table_info_equality(self):
         """Test TableInfo equality comparison."""
-        info1 = TableInfo("tbl_Test", "Sheet1", "A1:B10", "A1:B1", 9)
-        info2 = TableInfo("tbl_Test", "Sheet1", "A1:B10", "A1:B1", 9)
+        info1 = TableInfo("tbl_Test", "Sheet1", "$A$1:$B$10", ["A", "B"], 9, "$A$1:$B$1")
+        info2 = TableInfo("tbl_Test", "Sheet1", "$A$1:$B$10", ["A", "B"], 9, "$A$1:$B$1")
 
         assert info1 == info2
 
     def test_table_info_inequality(self):
         """Test TableInfo inequality comparison."""
-        info1 = TableInfo("tbl_Test1", "Sheet1", "A1:B10", "A1:B1", 9)
-        info2 = TableInfo("tbl_Test2", "Sheet1", "A1:B10", "A1:B1", 9)
+        info1 = TableInfo("tbl_Test1", "Sheet1", "$A$1:$B$10", ["A", "B"], 9, "$A$1:$B$1")
+        info2 = TableInfo("tbl_Test2", "Sheet1", "$A$1:$B$10", ["A", "B"], 9, "$A$1:$B$1")
 
         assert info1 != info2
 

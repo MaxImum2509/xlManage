@@ -38,7 +38,7 @@ from .worksheet_manager import _find_worksheet, _resolve_workbook
 # Excel table name constraints
 TABLE_NAME_MAX_LENGTH: int = 255
 # Must start with letter or underscore, contains only alphanumeric and underscores
-TABLE_NAME_PATTERN: str = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
+TABLE_NAME_PATTERN: str = r"^[A-Za-z_][A-Za-z0-9_]*$"
 
 
 @dataclass
@@ -48,16 +48,18 @@ class TableInfo:
     Attributes:
         name: Name of the table (e.g., "tbl_Sales")
         worksheet_name: Name of the worksheet containing the table
-        range_ref: Range reference (e.g., "A1:D100")
-        header_row_range: Range of the header row
+        range_address: Range address (e.g., "$A$1:$D$100")
+        columns: List of column header names
         rows_count: Number of data rows (excluding header)
+        header_row: Address of the header row (e.g., "$A$1:$D$1")
     """
 
     name: str
     worksheet_name: str
-    range_ref: str
-    header_row_range: str
+    range_address: str
+    columns: list[str]
     rows_count: int
+    header_row: str
 
 
 def _validate_table_name(name: str) -> None:
@@ -101,74 +103,115 @@ def _validate_table_name(name: str) -> None:
         raise TableNameError(name, "cannot be a cell reference")
 
 
-def _find_table(ws: "CDispatch", name: str) -> "CDispatch | None":
-    """Find a table by name in a worksheet.
+def _find_table(wb: "CDispatch", name: str) -> "tuple[CDispatch, CDispatch] | None":
+    """Find a table by name in a workbook (searches all worksheets).
 
-    Searches for a table (ListObject) with the given name.
-    Note: Table names are case-SENSITIVE in Excel.
+    Table names are unique across the entire workbook, not just within sheets.
+    Searches all worksheets in the workbook for a table with the given name.
 
     Args:
-        ws: Worksheet COM object to search in
+        wb: Workbook COM object to search in
         name: Name of the table to find
 
     Returns:
-        Table COM object if found, None otherwise
+        Tuple of (worksheet, table) if found, None otherwise
 
     Examples:
-        >>> table = _find_table(ws, "tbl_Sales")
-        >>> if table:
-        ...     print(f"Found: {table.Name}")
+        >>> result = _find_table(wb, "tbl_Sales")
+        >>> if result:
+        ...     ws, table = result
+        ...     print(f"Found {table.Name} in {ws.Name}")
 
     Note:
-        Unlike worksheet names, Excel table names are case-sensitive.
+        Table names are case-SENSITIVE in Excel.
         "tbl_Sales" and "TBL_SALES" are different tables.
     """
-    # Iterate through all tables in the worksheet
-    for table in ws.ListObjects:
+    # Iterate through all worksheets in the workbook
+    for ws in wb.Worksheets:
         try:
-            if table.Name == name:  # Case-sensitive comparison
-                return table
+            # Iterate through all tables in the worksheet
+            for table in ws.ListObjects:
+                try:
+                    if table.Name == name:  # Case-sensitive comparison
+                        return (ws, table)
+                except Exception:
+                    # Skip tables that can't be read
+                    continue
         except Exception:
-            # Skip tables that can't be read
+            # Skip sheets that can't be read
             continue
 
     return None
 
 
-def _validate_range(range_ref: str) -> None:
-    """Validate an Excel range reference.
+def _ranges_overlap(range1: "CDispatch", range2: "CDispatch") -> bool:
+    """Check if two COM Range objects overlap using Application.Intersect.
 
-    Checks that the range has valid syntax and structure.
+    Uses Excel's built-in Intersect method to determine overlap.
 
     Args:
-        range_ref: Range reference to validate (e.g., "A1:D10")
+        range1: First Range COM object
+        range2: Second Range COM object
 
-    Raises:
-        TableRangeError: If the range is invalid
+    Returns:
+        True if ranges overlap, False otherwise
 
     Examples:
-        >>> _validate_range("A1:D10")  # OK
-        >>> _validate_range("Sheet1!A1:D10")  # OK
-        >>> _validate_range("A1:Z")  # Raises: invalid syntax
+        >>> overlap = _ranges_overlap(ws.Range("A1:D10"), ws.Range("C5:F15"))
+        >>> print(overlap)  # True (overlaps at C5:D10)
+    """
+    try:
+        app = range1.Application
+        intersection = app.Intersect(range1, range2)
+        return intersection is not None
+    except Exception:
+        return False
+
+
+def _validate_range(ws: "CDispatch", range_ref: str) -> "CDispatch":
+    """Validate an Excel range reference and return the COM Range object.
+
+    Validates both syntax (via ws.Range) and checks for overlap with
+    existing tables in the worksheet.
+
+    Args:
+        ws: Worksheet COM object
+        range_ref: Range reference to validate (e.g., "A1:D10")
+
+    Returns:
+        Validated Range COM object
+
+    Raises:
+        TableRangeError: If the range is invalid or overlaps with an existing table
+
+    Examples:
+        >>> range_obj = _validate_range(ws, "A1:D10")
+        >>> print(range_obj.Address)  # "$A$1:$D$10"
     """
     if not range_ref or not range_ref.strip():
         raise TableRangeError(range_ref, "range cannot be empty")
 
-    # Remove sheet reference if present (e.g., "Sheet1!" or "'Sheet Name'!")
-    clean_range = range_ref
-    if "!" in clean_range:
-        parts = clean_range.split("!", 1)
-        if len(parts) == 2:
-            clean_range = parts[1]
-
-    # Must contain at least one colon (for start:end range)
-    if ":" not in clean_range:
-        raise TableRangeError(range_ref, "range must have format A1:Z99")
-
-    # Basic pattern check for Excel ranges
-    pattern = r"^[A-Z]+\d+:[A-Z]+\d+$|^[rR]\d+[cC]\d+:[rR]\d+[cC]\d+$"
-    if not re.match(pattern, clean_range.replace("$", "")):
+    # Attempt to create Range object (validates syntax)
+    try:
+        range_obj = ws.Range(range_ref)
+    except Exception:
         raise TableRangeError(range_ref, "invalid range syntax")
+
+    # Check for overlap with existing tables
+    for table in ws.ListObjects:
+        try:
+            existing_range = table.Range
+            if _ranges_overlap(range_obj, existing_range):
+                raise TableRangeError(
+                    range_ref, f"range overlaps with existing table '{table.Name}'"
+                )
+        except TableRangeError:
+            raise
+        except Exception:
+            # Skip tables that can't be read
+            continue
+
+    return range_obj
 
 
 class TableManager:
@@ -202,37 +245,41 @@ class TableManager:
             ws: Worksheet COM object
 
         Returns:
-            TableInfo with table details
+            TableInfo with table details including column names
         """
+        # Extract column names from table headers
+        columns = [col.Name for col in table.ListColumns]
+
         return TableInfo(
             name=table.Name,
             worksheet_name=ws.Name,
-            range_ref=table.Range.Address,
-            header_row_range=table.HeaderRowRange.Address,
+            range_address=table.Range.Address,
+            columns=columns,
             rows_count=table.DataBodyRange.Rows.Count if table.DataBodyRange else 0,
+            header_row=table.HeaderRowRange.Address,
         )
 
     def create(
         self,
         name: str,
         range_ref: str,
-        worksheet: str | None = None,
         workbook: Path | None = None,
+        worksheet: str | None = None,
     ) -> TableInfo:
         """Create a new table in a worksheet.
 
         Args:
             name: Name for the new table (e.g., "tbl_Sales")
             range_ref: Range reference (e.g., "A1:D100")
-            worksheet: Worksheet name (if None, uses active worksheet)
             workbook: Workbook path (if None, uses active workbook)
+            worksheet: Worksheet name (if None, uses active worksheet)
 
         Returns:
             TableInfo with details of the created table
 
         Raises:
             TableNameError: If the table name is invalid
-            TableRangeError: If the range is invalid
+            TableRangeError: If the range is invalid or overlaps
             TableAlreadyExistsError: If a table with this name already exists
             WorksheetNotFoundError: If the worksheet doesn't exist
             WorkbookNotFoundError: If the workbook is not open
@@ -245,9 +292,6 @@ class TableManager:
         # Validate table name
         _validate_table_name(name)
 
-        # Validate range
-        _validate_range(range_ref)
-
         # Resolve workbook and worksheet
         wb = _resolve_workbook(self._mgr.app, workbook)
 
@@ -257,15 +301,17 @@ class TableManager:
             ws = _find_worksheet(wb, worksheet)
 
         # Check if table name already exists in workbook
-        for sheet in wb.Worksheets:
-            for existing_table in sheet.ListObjects:
-                if existing_table.Name == name:
-                    raise TableAlreadyExistsError(name, wb.Name)
+        # Use the new _find_table() that searches the entire workbook
+        if _find_table(wb, name) is not None:
+            raise TableAlreadyExistsError(name, wb.Name)
+
+        # Validate range (checks syntax and overlap with existing tables)
+        range_obj = _validate_range(ws, range_ref)
 
         # Create the table
         table = ws.ListObjects.Add(
             SourceType=1,  # xlSrcRange
-            Source=ws.Range(range_ref),
+            Source=range_obj,
             XlListObjectHasHeaders=1,  # xlYes
         )
         table.Name = name
@@ -275,17 +321,21 @@ class TableManager:
     def delete(
         self,
         name: str,
-        worksheet: str | None = None,
         workbook: Path | None = None,
+        worksheet: str | None = None,
+        force: bool = False,
     ) -> None:
         """Delete a table.
 
-        Deletes the specified table from the worksheet.
+        By default (force=False), removes the table structure but keeps the data.
+        With force=True, deletes both the table structure and the data.
 
         Args:
             name: Name of the table to delete
-            worksheet: Worksheet containing the table (if None, search all)
             workbook: Target workbook path (if None, uses active workbook)
+            worksheet: Worksheet containing the table (if None, search all)
+            force: If True, deletes table and data; if False, only removes
+                   table structure (keeps data as normal range)
 
         Raises:
             TableNotFoundError: If the table doesn't exist
@@ -294,35 +344,44 @@ class TableManager:
 
         Examples:
             >>> manager = TableManager(excel_mgr)
-            >>> manager.delete("tbl_Sales")
-            >>> manager.delete("tbl_Old", worksheet="Archive")
+            >>> manager.delete("tbl_Sales")  # Keeps data, removes structure
+            >>> manager.delete("tbl_Old", force=True)  # Deletes everything
         """
         # Resolve workbook
         wb = _resolve_workbook(self._mgr.app, workbook)
 
-        # Search for table
-        table_found = None
+        # Search for table using new signature that searches entire workbook
+        result = None
 
         if worksheet is None:
-            # Search all worksheets
-            for sheet in wb.Worksheets:
-                table = _find_table(sheet, name)
-                if table:
-                    table_found = table
-                    break
+            # Search all worksheets using new _find_table(wb, name)
+            result = _find_table(wb, name)
         else:
             # Search specific worksheet
             ws = _find_worksheet(wb, worksheet)
-            table = _find_table(ws, name)
-            if table:
-                table_found = table
+            if ws is not None:
+                # Check if table exists in this specific worksheet
+                for table in ws.ListObjects:
+                    try:
+                        if table.Name == name:
+                            result = (ws, table)
+                            break
+                    except Exception:
+                        continue
 
-        if not table_found:
+        if result is None:
             worksheet_context = worksheet if worksheet else "any worksheet"
             raise TableNotFoundError(name, worksheet_context)
 
+        _ws, table_found = result
+
         # Delete the table
-        table_found.Delete()
+        if force:
+            # Delete table structure AND data
+            table_found.Delete()
+        else:
+            # Remove table structure but keep data
+            table_found.Unlist()
 
     def list(
         self,
