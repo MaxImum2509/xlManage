@@ -20,7 +20,7 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     from win32com.client import CDispatch
@@ -32,9 +32,12 @@ try:
 except ImportError:
     from xlmanage.exceptions import WorksheetNameError
 
+if TYPE_CHECKING:
+    from .excel_manager import ExcelManager
+
 
 SHEET_NAME_MAX_LENGTH: int = 31
-SHEET_NAME_FORBIDDEN_CHARS: str = r"\\/\*\?:\[\]"
+SHEET_NAME_FORBIDDEN_CHARS: str = r"\\/*?:\[\]"
 
 
 @dataclass
@@ -209,7 +212,7 @@ class WorksheetManager:
         The ExcelManager instance must be started before using this manager.
     """
 
-    def __init__(self, excel_manager):
+    def __init__(self, excel_manager: "ExcelManager"):
         """Initialize worksheet manager.
 
         Args:
@@ -315,7 +318,9 @@ class WorksheetManager:
             ws.Name = name
 
             # Step 5: Return WorksheetInfo
-            return self._get_worksheet_info(ws)
+            info = self._get_worksheet_info(ws)
+            del ws  # Clean up COM reference
+            return info
 
         except Exception as e:
             from .exceptions import ExcelConnectionError
@@ -518,7 +523,8 @@ class WorksheetManager:
 
             # Step 6: Get worksheet information
             info = self._get_worksheet_info(ws_copy)
-
+            del ws_copy  # Clean up COM reference
+            del ws_source  # Clean up COM reference
             return info
 
         except WorksheetNameError:

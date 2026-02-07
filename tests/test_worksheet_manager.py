@@ -277,7 +277,7 @@ class TestValidationConstants:
 
     def test_sheet_name_forbidden_chars_constant(self):
         """Test SHEET_NAME_FORBIDDEN_CHARS constant."""
-        assert r"\/\*\?:\[\]" in SHEET_NAME_FORBIDDEN_CHARS
+        assert SHEET_NAME_FORBIDDEN_CHARS == r'\\/*?:\[\]'
 
     def test_forbidden_chars_regex(self):
         """Test forbidden characters pattern works."""
