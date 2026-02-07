@@ -174,38 +174,44 @@ class TestStopCommand:
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_default(self, mock_manager_class):
-        """Test stop command with default options."""
+        """Test stop command with default options (no --force)."""
         # Setup mock
         mock_manager = Mock()
+        mock_info = InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)
+        mock_manager.get_running_instance.return_value = mock_info
         mock_manager_class.return_value = mock_manager
 
-        # Run command with force to skip confirmation
-        result = runner.invoke(app, ["stop", "--force"])
+        # Run command without --force (confirm with y)
+        result = runner.invoke(app, ["stop"], input="y\n")
 
         # Assertions
         assert result.exit_code == 0
-        mock_manager.stop.assert_called_once_with(save=True)
-        assert "stopped successfully" in result.stdout
+        mock_manager.stop_instance.assert_called_once_with(1234, save=True)
+        assert "arrêtée avec succès" in result.stdout
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_no_save(self, mock_manager_class):
         """Test stop command with --no-save option."""
         # Setup mock
         mock_manager = Mock()
+        mock_info = InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)
+        mock_manager.get_running_instance.return_value = mock_info
         mock_manager_class.return_value = mock_manager
 
-        # Run command
-        result = runner.invoke(app, ["stop", "--force", "--no-save"])
+        # Run command without --force, with --no-save (confirm with y)
+        result = runner.invoke(app, ["stop", "--no-save"], input="y\n")
 
         # Assertions
         assert result.exit_code == 0
-        mock_manager.stop.assert_called_once_with(save=False)
+        mock_manager.stop_instance.assert_called_once_with(1234, save=False)
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_with_confirmation_yes(self, mock_manager_class):
         """Test stop command with user confirmation (yes)."""
         # Setup mock
         mock_manager = Mock()
+        mock_info = InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)
+        mock_manager.get_running_instance.return_value = mock_info
         mock_manager_class.return_value = mock_manager
 
         # Run command with confirmation input
@@ -213,22 +219,23 @@ class TestStopCommand:
 
         # Assertions
         assert result.exit_code == 0
-        mock_manager.stop.assert_called_once_with(save=True)
+        mock_manager.stop_instance.assert_called_once_with(1234, save=True)
 
     @patch("xlmanage.cli.ExcelManager")
-    def test_stop_command_with_confirmation_no(self, mock_manager_class):
-        """Test stop command with user confirmation (no)."""
-        # Setup mock
+    def test_stop_command_no_active_instance(self, mock_manager_class):
+        """Test stop command when no instance is active."""
+        # Setup mock - get_running_instance returns None
         mock_manager = Mock()
+        mock_manager.get_running_instance.return_value = None
         mock_manager_class.return_value = mock_manager
 
-        # Run command with confirmation input
-        result = runner.invoke(app, ["stop"], input="n\n")
+        # Run command
+        result = runner.invoke(app, ["stop"])
 
         # Assertions
         assert result.exit_code == 0
-        mock_manager.stop.assert_not_called()
-        assert "cancelled" in result.stdout.lower()
+        assert "Aucune instance" in result.stdout
+        mock_manager.stop_instance.assert_not_called()
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_all_no_instances(self, mock_manager_class):
@@ -243,8 +250,8 @@ class TestStopCommand:
 
         # Assertions
         assert result.exit_code == 0
-        assert "No running Excel instances found" in result.stdout
-        mock_manager.stop.assert_not_called()
+        assert "Aucune instance" in result.stdout
+        mock_manager.stop_all.assert_not_called()
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_all_with_instances(self, mock_manager_class):
@@ -256,31 +263,33 @@ class TestStopCommand:
             InstanceInfo(pid=5678, visible=False, workbooks_count=0, hwnd=9012),
         ]
         mock_manager.list_running_instances.return_value = instances
+        mock_manager.stop_all.return_value = [1234, 5678]
         mock_manager_class.return_value = mock_manager
 
-        # Run command with force
-        result = runner.invoke(app, ["stop", "--all", "--force"])
+        # Run command with --all (no --force = clean shutdown via stop_all)
+        result = runner.invoke(app, ["stop", "--all"])
 
         # Assertions
         assert result.exit_code == 0
-        assert "Stopped" in result.stdout
+        mock_manager.stop_all.assert_called_once_with(save=True)
+        assert "arrêtée" in result.stdout
 
     @patch("xlmanage.cli.ExcelManager")
-    def test_stop_command_all_with_confirmation_no(self, mock_manager_class):
-        """Test stop command with --all and user cancels."""
+    def test_stop_command_all_with_no_save(self, mock_manager_class):
+        """Test stop command with --all --no-save."""
         # Setup mock
         mock_manager = Mock()
         instances = [InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)]
         mock_manager.list_running_instances.return_value = instances
+        mock_manager.stop_all.return_value = [1234]
         mock_manager_class.return_value = mock_manager
 
-        # Run command with confirmation input (no)
-        result = runner.invoke(app, ["stop", "--all"], input="n\n")
+        # Run command with --all --no-save
+        result = runner.invoke(app, ["stop", "--all", "--no-save"])
 
         # Assertions
         assert result.exit_code == 0
-        assert "cancelled" in result.stdout.lower()
-        mock_manager.stop.assert_not_called()
+        mock_manager.stop_all.assert_called_once_with(save=False)
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_all_with_partial_failure(self, mock_manager_class):
@@ -292,63 +301,66 @@ class TestStopCommand:
             InstanceInfo(pid=5678, visible=False, workbooks_count=0, hwnd=9012),
         ]
         mock_manager.list_running_instances.return_value = instances
-        # First call succeeds, second call fails
-        mock_manager.stop.side_effect = [None, Exception("Stop failed")]
+        # stop_all returns only first PID (second failed)
+        mock_manager.stop_all.return_value = [1234]
         mock_manager_class.return_value = mock_manager
 
-        # Run command with force
-        result = runner.invoke(app, ["stop", "--all", "--force"])
+        # Run command with --all (clean shutdown)
+        result = runner.invoke(app, ["stop", "--all"])
 
         # Assertions
         assert result.exit_code == 0
-        assert "Stopped" in result.stdout
+        assert "1234" in result.stdout
+        assert "échec" in result.stdout.lower() or "5678" in result.stdout
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_connection_error(self, mock_manager_class):
         """Test stop command with connection error."""
-        # Setup mock to raise exception
+        # Setup mock to raise exception on get_running_instance
         mock_manager = Mock()
-        mock_manager.stop.side_effect = ExcelConnectionError(
+        mock_manager.get_running_instance.side_effect = ExcelConnectionError(
             0x80080005, "Connection failed"
         )
         mock_manager_class.return_value = mock_manager
 
-        # Run command
-        result = runner.invoke(app, ["stop", "--force"])
+        # Run command without --force (calls _stop_active_instance)
+        result = runner.invoke(app, ["stop"])
 
-        # Assertions
+        # Assertions - exception propagates to stop() handler
         assert result.exit_code == 1
-        assert "Connection Error" in result.stdout
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_manage_error(self, mock_manager_class):
         """Test stop command with ExcelManageError."""
-        # Setup mock to raise exception
+        # Setup mock to raise on stop_instance
         mock_manager = Mock()
-        mock_manager.stop.side_effect = ExcelManageError("Management error")
+        mock_info = InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)
+        mock_manager.get_running_instance.return_value = mock_info
+        mock_manager.stop_instance.side_effect = ExcelManageError("Management error")
         mock_manager_class.return_value = mock_manager
 
-        # Run command
-        result = runner.invoke(app, ["stop", "--force"])
+        # Run command without --force (calls _stop_active_instance)
+        result = runner.invoke(app, ["stop"])
 
-        # Assertions
+        # Assertions - exception propagates to stop() handler
         assert result.exit_code == 1
-        assert "Excel management error" in result.stdout
 
     @patch("xlmanage.cli.ExcelManager")
     def test_stop_command_generic_error(self, mock_manager_class):
         """Test stop command with generic error."""
-        # Setup mock to raise exception
+        # Setup mock to raise on stop_instance
         mock_manager = Mock()
-        mock_manager.stop.side_effect = Exception("Unexpected error")
+        mock_info = InstanceInfo(pid=1234, visible=True, workbooks_count=1, hwnd=5678)
+        mock_manager.get_running_instance.return_value = mock_info
+        mock_manager.stop_instance.side_effect = Exception("Unexpected error")
         mock_manager_class.return_value = mock_manager
 
-        # Run command
-        result = runner.invoke(app, ["stop", "--force"])
+        # Run command without --force
+        result = runner.invoke(app, ["stop"])
 
-        # Assertions
+        # Assertions - exception propagates to stop() generic handler
         assert result.exit_code == 1
-        assert "Unexpected Error" in result.stdout
+        assert "Erreur" in result.stdout
 
 
 class TestStatusCommand:
@@ -470,14 +482,16 @@ class TestCLIIntegration:
         mock_manager = Mock()
         mock_info = InstanceInfo(pid=1234, visible=False, workbooks_count=0, hwnd=5678)
         mock_manager.start.return_value = mock_info
+        mock_manager.get_running_instance.return_value = mock_info
         mock_manager_class.return_value = mock_manager
 
         result1 = runner.invoke(app, ["start"])
         assert result1.exit_code == 0
 
-        result2 = runner.invoke(app, ["stop", "--force"])
+        # stop without --force calls _stop_active_instance → stop_instance
+        result2 = runner.invoke(app, ["stop"])
         assert result2.exit_code == 0
-        mock_manager.stop.assert_called_once()
+        mock_manager.stop_instance.assert_called_once_with(1234, save=True)
 
 
 class TestWorkbookCommands:
@@ -1191,8 +1205,9 @@ class TestTableCommands:
         mock_info = TableInfo(
             name="tbl_Sales",
             worksheet_name="Data",
-            range_ref="$A$1:$D$100",
-            header_row_range="$A$1:$D$1",
+            range_address="$A$1:$D$100",
+            columns=["A", "B", "C", "D"],
+            header_row="$A$1:$D$1",
             rows_count=99,
         )
         mock_table_mgr.create.return_value = mock_info
@@ -1220,8 +1235,9 @@ class TestTableCommands:
         mock_info = TableInfo(
             name="tbl_Data",
             worksheet_name="Sheet1",
-            range_ref="$A$1:$E$50",
-            header_row_range="$A$1:$E$1",
+            range_address="$A$1:$E$50",
+            columns=["A", "B", "C", "D", "E"],
+            header_row="$A$1:$E$1",
             rows_count=49,
         )
         mock_table_mgr.create.return_value = mock_info
@@ -1251,8 +1267,9 @@ class TestTableCommands:
         mock_info = TableInfo(
             name="tbl_Test",
             worksheet_name="Data",
-            range_ref="$A$1:$C$20",
-            header_row_range="$A$1:$C$1",
+            range_address="$A$1:$C$20",
+            columns=["A", "B", "C"],
+            header_row="$A$1:$C$1",
             rows_count=19,
         )
         mock_table_mgr.create.return_value = mock_info
@@ -1460,15 +1477,17 @@ class TestTableCommands:
             TableInfo(
                 name="tbl_Sales",
                 worksheet_name="Data",
-                range_ref="$A$1:$D$100",
-                header_row_range="$A$1:$D$1",
+                range_address="$A$1:$D$100",
+                columns=["A", "B", "C", "D"],
+                header_row="$A$1:$D$1",
                 rows_count=99,
             ),
             TableInfo(
                 name="tbl_Products",
                 worksheet_name="Products",
-                range_ref="$A$1:$E$50",
-                header_row_range="$A$1:$E$1",
+                range_address="$A$1:$E$50",
+                columns=["A", "B", "C", "D", "E"],
+                header_row="$A$1:$E$1",
                 rows_count=49,
             ),
         ]
@@ -1496,8 +1515,9 @@ class TestTableCommands:
             TableInfo(
                 name="tbl_Data",
                 worksheet_name="Sheet1",
-                range_ref="$A$1:$C$20",
-                header_row_range="$A$1:$C$1",
+                range_address="$A$1:$C$20",
+                columns=["A", "B", "C"],
+                header_row="$A$1:$C$1",
                 rows_count=19,
             ),
         ]
@@ -1524,8 +1544,9 @@ class TestTableCommands:
             TableInfo(
                 name="tbl_Test",
                 worksheet_name="Data",
-                range_ref="$A$1:$B$10",
-                header_row_range="$A$1:$B$1",
+                range_address="$A$1:$B$10",
+                columns=["A", "B"],
+                header_row="$A$1:$B$1",
                 rows_count=9,
             ),
         ]

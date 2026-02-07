@@ -273,73 +273,106 @@ class TestFindTable:
     """Tests for _find_table function."""
 
     def test_find_table_success(self):
-        """Test _find_table finds a table by name."""
-        # Create mock worksheet with tables
-        ws = MagicMock()
+        """Test _find_table finds a table by name across worksheets."""
+        # _find_table(wb, name) takes a workbook, searches all worksheets
         table1 = MagicMock()
         table1.Name = "tbl_Sales"
         table2 = MagicMock()
         table2.Name = "tbl_Products"
+
+        ws = MagicMock()
         ws.ListObjects = [table1, table2]
 
-        result = _find_table(ws, "tbl_Sales")
+        wb = MagicMock()
+        wb.Worksheets = [ws]
 
-        assert result == table1
+        result = _find_table(wb, "tbl_Sales")
+
+        assert result is not None
+        found_ws, found_table = result
+        assert found_table == table1
 
     def test_find_table_not_found(self):
         """Test _find_table returns None when table doesn't exist."""
-        ws = MagicMock()
         table1 = MagicMock()
         table1.Name = "tbl_Sales"
+
+        ws = MagicMock()
         ws.ListObjects = [table1]
 
-        result = _find_table(ws, "tbl_Missing")
+        wb = MagicMock()
+        wb.Worksheets = [ws]
+
+        result = _find_table(wb, "tbl_Missing")
 
         assert result is None
 
     def test_find_table_case_sensitive(self):
         """Test _find_table is case-sensitive."""
-        ws = MagicMock()
         table1 = MagicMock()
         table1.Name = "tbl_Sales"
+
+        ws = MagicMock()
         ws.ListObjects = [table1]
 
+        wb = MagicMock()
+        wb.Worksheets = [ws]
+
         # Different case should not match
-        result = _find_table(ws, "TBL_SALES")
+        result = _find_table(wb, "TBL_SALES")
         assert result is None
 
         # Exact case should match
-        result = _find_table(ws, "tbl_Sales")
-        assert result == table1
+        result = _find_table(wb, "tbl_Sales")
+        assert result is not None
+        assert result[1] == table1
 
     def test_find_table_empty_worksheet(self):
         """Test _find_table with no tables in worksheet."""
         ws = MagicMock()
         ws.ListObjects = []
 
-        result = _find_table(ws, "tbl_Any")
+        wb = MagicMock()
+        wb.Worksheets = [ws]
+
+        result = _find_table(wb, "tbl_Any")
 
         assert result is None
 
     def test_find_table_handles_error(self):
         """Test _find_table continues when table can't be read."""
-        ws = MagicMock()
         table1 = MagicMock()
-        table1.Name = Exception("COM error")
+        type(table1).Name = property(
+            lambda self: (_ for _ in ()).throw(Exception("COM error"))
+        )
         table2 = MagicMock()
         table2.Name = "tbl_Valid"
+
+        ws = MagicMock()
         ws.ListObjects = [table1, table2]
 
-        result = _find_table(ws, "tbl_Valid")
+        wb = MagicMock()
+        wb.Worksheets = [ws]
 
-        assert result == table2
+        result = _find_table(wb, "tbl_Valid")
+
+        assert result is not None
+        assert result[1] == table2
 
 
 class TestValidateRange:
     """Tests for _validate_range function."""
 
+    def _make_ws_mock(self):
+        """Create a worksheet mock for _validate_range tests."""
+        ws = MagicMock()
+        ws.Range.return_value = MagicMock()
+        ws.ListObjects = []  # No existing tables
+        return ws
+
     def test_validate_valid_ranges(self):
         """Test _validate_range with valid range references."""
+        ws = self._make_ws_mock()
         valid_ranges = [
             "A1:D10",
             "B5:Z100",
@@ -349,10 +382,11 @@ class TestValidateRange:
         ]
 
         for range_ref in valid_ranges:
-            _validate_range(range_ref)  # Should not raise
+            _validate_range(ws, range_ref)  # Should not raise
 
     def test_validate_range_with_sheet_reference(self):
         """Test _validate_range with sheet name prefix."""
+        ws = self._make_ws_mock()
         valid_ranges = [
             "Sheet1!A1:D10",
             "'My Sheet'!B5:Z100",
@@ -360,33 +394,39 @@ class TestValidateRange:
         ]
 
         for range_ref in valid_ranges:
-            _validate_range(range_ref)  # Should not raise
+            _validate_range(ws, range_ref)  # Should not raise
 
     def test_validate_empty_range(self):
         """Test _validate_range with empty range."""
+        ws = self._make_ws_mock()
         with pytest.raises(TableRangeError) as exc_info:
-            _validate_range("")
+            _validate_range(ws, "")
 
         assert exc_info.value.range_ref == ""
         assert "cannot be empty" in exc_info.value.reason
 
     def test_validate_whitespace_only_range(self):
         """Test _validate_range with whitespace-only range."""
+        ws = self._make_ws_mock()
         with pytest.raises(TableRangeError) as exc_info:
-            _validate_range("   ")
+            _validate_range(ws, "   ")
 
         assert "cannot be empty" in exc_info.value.reason
 
     def test_validate_range_missing_colon(self):
-        """Test _validate_range with no colon."""
+        """Test _validate_range with invalid range syntax."""
+        ws = self._make_ws_mock()
+        ws.Range.side_effect = Exception("Invalid range")
         with pytest.raises(TableRangeError) as exc_info:
-            _validate_range("A1")
+            _validate_range(ws, "A1")
 
         assert exc_info.value.range_ref == "A1"
-        assert "must have format A1:Z99" in exc_info.value.reason
+        assert "invalid range syntax" in exc_info.value.reason
 
     def test_validate_range_invalid_syntax(self):
         """Test _validate_range with invalid syntax."""
+        ws = self._make_ws_mock()
+        ws.Range.side_effect = Exception("Invalid range")
         invalid_ranges = [
             "A1:D",  # Incomplete end cell
             "1:D10",  # Invalid start cell
@@ -396,29 +436,33 @@ class TestValidateRange:
 
         for range_ref in invalid_ranges:
             with pytest.raises(TableRangeError) as exc_info:
-                _validate_range(range_ref)
+                _validate_range(ws, range_ref)
 
             assert "invalid range syntax" in exc_info.value.reason
 
     def test_validate_range_no_colon(self):
         """Test _validate_range with no colon at all."""
+        ws = self._make_ws_mock()
+        ws.Range.side_effect = Exception("Invalid range")
         with pytest.raises(TableRangeError) as exc_info:
-            _validate_range("ABC")
+            _validate_range(ws, "ABC")
 
-        assert "must have format A1:Z99" in exc_info.value.reason
+        assert "invalid range syntax" in exc_info.value.reason
 
     def test_validate_r1c1_range(self):
         """Test _validate_range with R1C1 notation."""
+        ws = self._make_ws_mock()
         valid_ranges = [
             "R1C1:R10C5",
             "r1c1:r100c200",
         ]
 
         for range_ref in valid_ranges:
-            _validate_range(range_ref)  # Should not raise
+            _validate_range(ws, range_ref)  # Should not raise
 
     def test_validate_range_with_dollar_signs(self):
         """Test _validate_range handles $ signs correctly."""
+        ws = self._make_ws_mock()
         valid_ranges = [
             "$A$1:$D$10",
             "A$1:D$10",
@@ -426,7 +470,7 @@ class TestValidateRange:
         ]
 
         for range_ref in valid_ranges:
-            _validate_range(range_ref)  # Should not raise
+            _validate_range(ws, range_ref)  # Should not raise
 
 
 class TestTableManager:
@@ -444,12 +488,18 @@ class TestTableManager:
         mock_excel_mgr = Mock()
         manager = TableManager(mock_excel_mgr)
 
+        # Create mock columns
+        col1, col2, col3, col4 = Mock(), Mock(), Mock(), Mock()
+        col1.Name, col2.Name = "Col1", "Col2"
+        col3.Name, col4.Name = "Col3", "Col4"
+
         # Create mock table
         mock_table = Mock()
         mock_table.Name = "tbl_Sales"
         mock_table.Range.Address = "$A$1:$D$100"
         mock_table.HeaderRowRange.Address = "$A$1:$D$1"
         mock_table.DataBodyRange.Rows.Count = 99
+        mock_table.ListColumns = [col1, col2, col3, col4]
 
         # Create mock worksheet
         mock_ws = Mock()
@@ -459,8 +509,9 @@ class TestTableManager:
 
         assert info.name == "tbl_Sales"
         assert info.worksheet_name == "Data"
-        assert info.range_ref == "$A$1:$D$100"
-        assert info.header_row_range == "$A$1:$D$1"
+        assert info.range_address == "$A$1:$D$100"
+        assert info.header_row == "$A$1:$D$1"
+        assert info.columns == ["Col1", "Col2", "Col3", "Col4"]
         assert info.rows_count == 99
 
     def test_get_table_info_empty_table(self):
@@ -468,12 +519,17 @@ class TestTableManager:
         mock_excel_mgr = Mock()
         manager = TableManager(mock_excel_mgr)
 
+        # Create mock columns
+        col1 = Mock()
+        col1.Name = "Col1"
+
         # Create mock table with no data
         mock_table = Mock()
         mock_table.Name = "tbl_Empty"
         mock_table.Range.Address = "$A$1:$D$1"
         mock_table.HeaderRowRange.Address = "$A$1:$D$1"
         mock_table.DataBodyRange = None  # No data rows
+        mock_table.ListColumns = [col1]
 
         mock_ws = Mock()
         mock_ws.Name = "Sheet1"
@@ -507,11 +563,17 @@ class TestTableManagerCreate:
         mock_range = Mock()
         mock_ws.Range.return_value = mock_range
 
+        # Mock columns
+        col1, col2, col3, col4 = Mock(), Mock(), Mock(), Mock()
+        col1.Name, col2.Name = "A", "B"
+        col3.Name, col4.Name = "C", "D"
+
         mock_table = Mock()
         mock_table.Name = "tbl_Sales"
         mock_table.Range.Address = "$A$1:$D$100"
         mock_table.HeaderRowRange.Address = "$A$1:$D$1"
         mock_table.DataBodyRange.Rows.Count = 99
+        mock_table.ListColumns = [col1, col2, col3, col4]
 
         # Mock ListObjects with Add method
         mock_list_objects = Mock()
@@ -527,7 +589,7 @@ class TestTableManagerCreate:
 
         assert info.name == "tbl_Sales"
         assert info.worksheet_name == "Data"
-        assert info.range_ref == "$A$1:$D$100"
+        assert info.range_address == "$A$1:$D$100"
         assert info.rows_count == 99
 
         # Verify Add was called with correct parameters
@@ -545,12 +607,28 @@ class TestTableManagerCreate:
             manager.create("1InvalidName", "A1:D10")
 
     def test_create_invalid_range(self):
-        """Test create with invalid range."""
+        """Test create with invalid range (empty string)."""
+        from unittest.mock import patch
+
         mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_wb.Name = "Test.xlsx"
+        mock_app.ActiveWorkbook = mock_wb
+
+        mock_ws = Mock()
+        mock_ws.Name = "Sheet1"
+        mock_ws.Range.side_effect = Exception("Invalid range")
+        mock_ws.ListObjects = []
+        mock_wb.ActiveSheet = mock_ws
+        mock_wb.Worksheets = [mock_ws]
+
         manager = TableManager(mock_excel_mgr)
 
         with pytest.raises(TableRangeError):
-            manager.create("tbl_Valid", "A1")  # Missing colon
+            manager.create("tbl_Valid", "")
 
     def test_create_duplicate_name(self):
         """Test create with duplicate table name."""
@@ -597,9 +675,10 @@ class TestTableManagerCreate:
         mock_wb.Name = "Test.xlsx"
         mock_app.ActiveWorkbook = mock_wb
 
-        # Mock specific worksheet
-        mock_ws = Mock()
-        mock_ws.Name = "CustomSheet"
+        # Mock columns
+        col1, col2, col3, col4 = Mock(), Mock(), Mock(), Mock()
+        col1.Name, col2.Name = "A", "B"
+        col3.Name, col4.Name = "C", "D"
 
         # Mock table
         mock_table = Mock()
@@ -607,25 +686,28 @@ class TestTableManagerCreate:
         mock_table.Range.Address = "$A$1:$D$10"
         mock_table.HeaderRowRange.Address = "$A$1:$D$1"
         mock_table.DataBodyRange.Rows.Count = 9
+        mock_table.ListColumns = [col1, col2, col3, col4]
 
-        # Mock Range and ListObjects.Add
+        # Mock specific worksheet
+        mock_ws = Mock()
+        mock_ws.Name = "CustomSheet"
         mock_range = Mock()
         mock_ws.Range.return_value = mock_range
+        mock_ws.ListObjects = MagicMock()
         mock_ws.ListObjects.Add.return_value = mock_table
+        mock_ws.ListObjects.__iter__ = Mock(return_value=iter([]))
 
-        # No existing tables
+        # No existing tables in workbook
         mock_wb.Worksheets = []
 
         manager = TableManager(mock_excel_mgr)
 
-        # Mock _resolve_workbook and _find_worksheet
         with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
             with patch(
                 "xlmanage.table_manager._find_worksheet", return_value=mock_ws
             ):
                 info = manager.create("tbl_Test", "A1:D10", worksheet="CustomSheet")
 
-                # Verify the table was created in the specific worksheet
                 assert info.name == "tbl_Test"
                 assert info.worksheet_name == "CustomSheet"
                 assert info.rows_count == 9
@@ -635,7 +717,7 @@ class TestTableManagerDelete:
     """Tests for TableManager.delete() method."""
 
     def test_delete_from_active_workbook(self):
-        """Test deleting table searching all worksheets."""
+        """Test deleting table searching all worksheets (default: Unlist)."""
         mock_excel_mgr = Mock()
         mock_app = Mock()
         mock_excel_mgr.app = mock_app
@@ -659,11 +741,13 @@ class TestTableManagerDelete:
         manager = TableManager(mock_excel_mgr)
         manager.delete("tbl_Sales")
 
-        # Verify Delete was called
-        mock_table.Delete.assert_called_once()
+        # Default (force=False) calls Unlist, not Delete
+        mock_table.Unlist.assert_called_once()
 
     def test_delete_from_specific_worksheet(self):
-        """Test deleting table from specific worksheet."""
+        """Test deleting table from specific worksheet with force=True."""
+        from unittest.mock import patch
+
         mock_excel_mgr = Mock()
         mock_app = Mock()
         mock_excel_mgr.app = mock_app
@@ -685,8 +769,12 @@ class TestTableManagerDelete:
         mock_wb.Worksheets = [mock_ws]
 
         manager = TableManager(mock_excel_mgr)
-        manager.delete("tbl_Sales", worksheet="Data")
 
+        with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
+            with patch("xlmanage.table_manager._find_worksheet", return_value=mock_ws):
+                manager.delete("tbl_Sales", worksheet="Data", force=True)
+
+        # force=True calls Delete
         mock_table.Delete.assert_called_once()
 
     def test_delete_table_not_found(self):
@@ -716,6 +804,21 @@ class TestTableManagerDelete:
 class TestTableManagerList:
     """Tests for TableManager.list() method."""
 
+    def _make_mock_table(self, name, range_addr, header_addr, rows, col_names):
+        """Helper to create a mock table with ListColumns."""
+        mock_table = Mock()
+        mock_table.Name = name
+        mock_table.Range.Address = range_addr
+        mock_table.HeaderRowRange.Address = header_addr
+        mock_table.DataBodyRange.Rows.Count = rows
+        cols = []
+        for cn in col_names:
+            c = Mock()
+            c.Name = cn
+            cols.append(c)
+        mock_table.ListColumns = cols
+        return mock_table
+
     def test_list_all_tables_in_workbook(self):
         """Test listing all tables in workbook."""
         mock_excel_mgr = Mock()
@@ -730,21 +833,17 @@ class TestTableManagerList:
         # Mock first worksheet with one table
         mock_ws1 = Mock()
         mock_ws1.Name = "Sheet1"
-        mock_table1 = Mock()
-        mock_table1.Name = "tbl_Sales"
-        mock_table1.Range.Address = "$A$1:$D$10"
-        mock_table1.HeaderRowRange.Address = "$A$1:$D$1"
-        mock_table1.DataBodyRange.Rows.Count = 9
+        mock_table1 = self._make_mock_table(
+            "tbl_Sales", "$A$1:$D$10", "$A$1:$D$1", 9, ["A", "B", "C", "D"]
+        )
         mock_ws1.ListObjects = [mock_table1]
 
         # Mock second worksheet with one table
         mock_ws2 = Mock()
         mock_ws2.Name = "Sheet2"
-        mock_table2 = Mock()
-        mock_table2.Name = "tbl_Products"
-        mock_table2.Range.Address = "$A$1:$C$20"
-        mock_table2.HeaderRowRange.Address = "$A$1:$C$1"
-        mock_table2.DataBodyRange.Rows.Count = 19
+        mock_table2 = self._make_mock_table(
+            "tbl_Products", "$A$1:$C$20", "$A$1:$C$1", 19, ["A", "B", "C"]
+        )
         mock_ws2.ListObjects = [mock_table2]
 
         mock_wb.Worksheets = [mock_ws1, mock_ws2]
@@ -760,6 +859,8 @@ class TestTableManagerList:
 
     def test_list_tables_in_specific_worksheet(self):
         """Test listing tables in specific worksheet."""
+        from unittest.mock import patch
+
         mock_excel_mgr = Mock()
         mock_app = Mock()
         mock_excel_mgr.app = mock_app
@@ -772,17 +873,18 @@ class TestTableManagerList:
         # Mock worksheet
         mock_ws = Mock()
         mock_ws.Name = "Data"
-        mock_table = Mock()
-        mock_table.Name = "tbl_Sales"
-        mock_table.Range.Address = "$A$1:$D$10"
-        mock_table.HeaderRowRange.Address = "$A$1:$D$1"
-        mock_table.DataBodyRange.Rows.Count = 9
+        mock_table = self._make_mock_table(
+            "tbl_Sales", "$A$1:$D$10", "$A$1:$D$1", 9, ["A", "B", "C", "D"]
+        )
         mock_ws.ListObjects = [mock_table]
 
         mock_wb.Worksheets = [mock_ws]
 
         manager = TableManager(mock_excel_mgr)
-        tables = manager.list(worksheet="Data")
+
+        with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
+            with patch("xlmanage.table_manager._find_worksheet", return_value=mock_ws):
+                tables = manager.list(worksheet="Data")
 
         assert len(tables) == 1
         assert tables[0].name == "tbl_Sales"
@@ -834,6 +936,8 @@ class TestTableManagerList:
         mock_table2.Range.Address = "$A$1:$D$10"
         mock_table2.HeaderRowRange.Address = "$A$1:$D$1"
         mock_table2.DataBodyRange.Rows.Count = 9
+        cols = [Mock(Name="A"), Mock(Name="B"), Mock(Name="C"), Mock(Name="D")]
+        mock_table2.ListColumns = cols
 
         mock_ws.ListObjects = [mock_table1, mock_table2]
         mock_wb.Worksheets = [mock_ws]
@@ -864,6 +968,7 @@ class TestTableManagerList:
         mock_good_table.Range.Address = "$A$1:$B$5"
         mock_good_table.HeaderRowRange.Address = "$A$1:$B$1"
         mock_good_table.DataBodyRange.Rows.Count = 4
+        mock_good_table.ListColumns = [Mock(Name="A"), Mock(Name="B")]
         mock_good_ws.ListObjects = [mock_good_table]
 
         # Mock corrupted sheet that raises exception when accessing ListObjects
@@ -904,6 +1009,7 @@ class TestTableManagerList:
         mock_good_table.Range.Address = "$A$1:$C$10"
         mock_good_table.HeaderRowRange.Address = "$A$1:$C$1"
         mock_good_table.DataBodyRange.Rows.Count = 9
+        mock_good_table.ListColumns = [Mock(Name="A"), Mock(Name="B"), Mock(Name="C")]
 
         # Corrupted table that raises exception when accessing properties
         mock_bad_table = Mock()
@@ -925,3 +1031,194 @@ class TestTableManagerList:
                 # Should return only good table, skip corrupted one
                 assert len(tables) == 1
                 assert tables[0].name == "tbl_Good"
+
+
+class TestFindTableEdgeCases:
+    """Tests for _find_table edge cases (corrupted sheet)."""
+
+    def test_find_table_skips_corrupted_sheet(self):
+        """Test _find_table skips sheets that raise on ListObjects."""
+        from xlmanage.table_manager import _find_table
+
+        mock_wb = Mock()
+
+        # Bad sheet raises on ListObjects
+        mock_bad_ws = Mock()
+        mock_bad_ws.Name = "Bad"
+        type(mock_bad_ws).ListObjects = property(
+            lambda self: (_ for _ in ()).throw(Exception("Corrupted"))
+        )
+
+        # Good sheet has the target table
+        mock_good_ws = Mock()
+        mock_good_ws.Name = "Good"
+        mock_table = Mock()
+        mock_table.Name = "tbl_Target"
+        mock_good_ws.ListObjects = [mock_table]
+
+        mock_wb.Worksheets = [mock_bad_ws, mock_good_ws]
+
+        result = _find_table(mock_wb, "tbl_Target")
+        assert result is not None
+        ws, table = result
+        assert table.Name == "tbl_Target"
+
+    def test_find_table_skips_corrupted_table_name(self):
+        """Test _find_table skips tables whose Name raises."""
+        from xlmanage.table_manager import _find_table
+
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "Sheet1"
+
+        mock_bad_table = Mock()
+        type(mock_bad_table).Name = property(
+            lambda self: (_ for _ in ()).throw(Exception("Corrupted"))
+        )
+        mock_good_table = Mock()
+        mock_good_table.Name = "tbl_Target"
+
+        mock_ws.ListObjects = [mock_bad_table, mock_good_table]
+        mock_wb.Worksheets = [mock_ws]
+
+        result = _find_table(mock_wb, "tbl_Target")
+        assert result is not None
+        _, table = result
+        assert table.Name == "tbl_Target"
+
+
+class TestRangesOverlap:
+    """Tests for _ranges_overlap function."""
+
+    def test_ranges_overlap_true(self):
+        """Test overlapping ranges return True."""
+        from xlmanage.table_manager import _ranges_overlap
+
+        mock_range1 = Mock()
+        mock_range2 = Mock()
+        mock_app = Mock()
+        mock_range1.Application = mock_app
+        mock_app.Intersect.return_value = Mock()  # non-None = overlap
+
+        assert _ranges_overlap(mock_range1, mock_range2) is True
+
+    def test_ranges_overlap_false(self):
+        """Test non-overlapping ranges return False."""
+        from xlmanage.table_manager import _ranges_overlap
+
+        mock_range1 = Mock()
+        mock_range2 = Mock()
+        mock_app = Mock()
+        mock_range1.Application = mock_app
+        mock_app.Intersect.return_value = None
+
+        assert _ranges_overlap(mock_range1, mock_range2) is False
+
+    def test_ranges_overlap_exception(self):
+        """Test exception returns False."""
+        from xlmanage.table_manager import _ranges_overlap
+
+        mock_range1 = Mock()
+        mock_range2 = Mock()
+        mock_range1.Application.Intersect.side_effect = Exception("COM error")
+
+        assert _ranges_overlap(mock_range1, mock_range2) is False
+
+
+class TestValidateRangeOverlap:
+    """Tests for _validate_range overlap detection."""
+
+    def test_validate_range_overlap_raises(self):
+        """Test _validate_range raises when range overlaps existing table."""
+        from unittest.mock import patch
+
+        from xlmanage.table_manager import _validate_range
+
+        mock_ws = Mock()
+        mock_range = Mock()
+        mock_ws.Range.return_value = mock_range
+
+        mock_table = Mock()
+        mock_table.Name = "tbl_Existing"
+        mock_table.Range = Mock()
+        mock_ws.ListObjects = [mock_table]
+
+        with patch("xlmanage.table_manager._ranges_overlap", return_value=True):
+            with pytest.raises(TableRangeError) as exc_info:
+                _validate_range(mock_ws, "A1:D10")
+            assert "overlaps" in str(exc_info.value)
+
+    def test_validate_range_overlap_skip_unreadable_table(self):
+        """Test _validate_range skips tables that raise on Range access."""
+        from unittest.mock import patch
+
+        from xlmanage.table_manager import _validate_range
+
+        mock_ws = Mock()
+        mock_range = Mock()
+        mock_ws.Range.return_value = mock_range
+
+        # Table whose Range property raises
+        mock_bad_table = Mock()
+        type(mock_bad_table).Range = property(
+            lambda self: (_ for _ in ()).throw(Exception("Corrupted"))
+        )
+        mock_ws.ListObjects = [mock_bad_table]
+
+        with patch("xlmanage.table_manager._ranges_overlap", return_value=False):
+            result = _validate_range(mock_ws, "A1:D10")
+        assert result == mock_range
+
+
+class TestDeleteWithWorksheet:
+    """Tests for delete() with specific worksheet parameter."""
+
+    def test_delete_from_specific_worksheet_not_found(self):
+        """Test delete raises when table not in specific worksheet."""
+        from unittest.mock import patch
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+        mock_ws.ListObjects = []
+
+        manager = TableManager(mock_excel_mgr)
+        with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
+            with patch("xlmanage.table_manager._find_worksheet", return_value=mock_ws):
+                with pytest.raises(TableNotFoundError):
+                    manager.delete("tbl_Missing", worksheet="Data")
+
+    def test_delete_specific_worksheet_corrupted_table_skipped(self):
+        """Test delete skips corrupted tables when searching specific worksheet."""
+        from unittest.mock import patch
+
+        mock_excel_mgr = Mock()
+        mock_app = Mock()
+        mock_excel_mgr.app = mock_app
+
+        mock_wb = Mock()
+        mock_ws = Mock()
+        mock_ws.Name = "Data"
+
+        # Corrupted table
+        mock_bad = Mock()
+        type(mock_bad).Name = property(
+            lambda self: (_ for _ in ()).throw(Exception("Corrupted"))
+        )
+
+        # Good table
+        mock_good = Mock()
+        mock_good.Name = "tbl_Target"
+
+        mock_ws.ListObjects = [mock_bad, mock_good]
+
+        manager = TableManager(mock_excel_mgr)
+        with patch("xlmanage.table_manager._resolve_workbook", return_value=mock_wb):
+            with patch("xlmanage.table_manager._find_worksheet", return_value=mock_ws):
+                manager.delete("tbl_Target", worksheet="Data")
+
+        mock_good.Unlist.assert_called_once()

@@ -478,6 +478,22 @@ def enumerate_excel_pids() -> list[int]:
     """
     ...
 
+def _find_hwnd_for_pid(pid: int) -> int | None:
+    """Trouve le HWND de la fenetre principale Excel pour un PID donne.
+
+    Utilise ctypes.windll.user32.EnumWindows pour iterer les fenetres
+    top-level, filtre par classe "XLMAIN" et PID correspondant.
+    """
+    ...
+
+def connect_by_pid(pid: int) -> CDispatch | None:
+    """Connexion a une instance Excel par son PID.
+
+    Chaine : PID -> _find_hwnd_for_pid() -> connect_by_hwnd() -> CDispatch.
+    Utilise par list_running_instances() (fallback) et stop_instance() (fallback).
+    """
+    ...
+
 def connect_by_hwnd(hwnd: int) -> CDispatch | None:
     """Connexion a une instance Excel par son handle de fenetre.
 

@@ -36,6 +36,8 @@ except ImportError:
     pywintypes = None
 
 # Import subprocess for process management
+import ctypes
+import ctypes.wintypes
 import subprocess
 
 from .exceptions import ExcelConnectionError, ExcelInstanceNotFoundError, ExcelRPCError
@@ -270,7 +272,11 @@ class ExcelManager:
                 break
 
         if target_app is None:
-            # Fallback: check via tasklist if PID exists
+            # Fallback: try connecting via PID → HWND → COM
+            target_app = connect_by_pid(pid)
+
+        if target_app is None:
+            # Last resort: check via tasklist if PID exists at all
             all_pids = enumerate_excel_pids()
             if pid not in all_pids:
                 raise ExcelInstanceNotFoundError(
@@ -471,14 +477,23 @@ class ExcelManager:
             # Extract just the InstanceInfo
             return [info for app, info in rot_instances]
 
-        # Fallback: tasklist to get PIDs
+        # Fallback: tasklist to get PIDs, then connect via HWND
         try:
             pids = enumerate_excel_pids()
 
-            # Convert PIDs to InstanceInfo (limited info)
             instances = []
             for pid in pids:
-                # Cannot get visible/workbooks_count without COM
+                # Try to get full info via connect_by_pid
+                app = connect_by_pid(pid)
+                if app is not None:
+                    try:
+                        info = _get_instance_info_from_app(app)
+                        instances.append(info)
+                        continue
+                    except Exception:
+                        pass
+
+                # Degraded info if COM connection failed
                 info = InstanceInfo(
                     pid=pid,
                     visible=False,  # Unknown
@@ -559,8 +574,6 @@ def _get_instance_info_from_app(app: CDispatch) -> InstanceInfo:
     Returns:
         InstanceInfo: Instance information
     """
-    import ctypes
-
     # Get HWND (window handle)
     hwnd = app.Hwnd
 
@@ -627,6 +640,80 @@ def enumerate_excel_pids() -> list[int]:
         raise RuntimeError("Commande tasklist introuvable (Windows requis)")
 
 
+def _find_hwnd_for_pid(pid: int) -> int | None:
+    """Find the main Excel window handle (HWND) for a given Process ID.
+
+    Iterates all top-level windows via EnumWindows, filtering for:
+    1. Window class name == "XLMAIN" (Excel's main window class)
+    2. Window's owning PID matches the requested PID
+
+    Args:
+        pid: Process ID of the target Excel instance
+
+    Returns:
+        int | None: Window handle if found, None otherwise
+    """
+    user32 = ctypes.windll.user32
+
+    found_hwnd = None
+
+    @ctypes.WINFUNCTYPE(
+        ctypes.wintypes.BOOL,
+        ctypes.wintypes.HWND,
+        ctypes.wintypes.LPARAM,
+    )
+    def _enum_callback(hwnd, _lparam):
+        nonlocal found_hwnd
+
+        # Get PID for this window
+        process_id = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
+
+        if process_id.value != pid:
+            return True  # Continue enumeration
+
+        # Check window class name
+        class_name = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, class_name, 256)
+
+        if class_name.value == "XLMAIN":
+            found_hwnd = hwnd
+            return False  # Stop enumeration
+
+        return True  # Continue
+
+    user32.EnumWindows(_enum_callback, 0)
+    return found_hwnd
+
+
+def connect_by_pid(pid: int) -> CDispatch | None:
+    """Connect to an Excel instance by its Process ID.
+
+    Finds the main Excel window (class XLMAIN) belonging to the given PID
+    via EnumWindows, then delegates to connect_by_hwnd() to get the COM object.
+
+    Args:
+        pid: Process ID of the target Excel instance
+
+    Returns:
+        CDispatch | None: Excel Application COM object, or None if failed
+
+    Note:
+        Uses _find_hwnd_for_pid() to locate the HWND, then connect_by_hwnd()
+        to obtain the COM Application object.
+    """
+    try:
+        hwnd = _find_hwnd_for_pid(pid)
+
+        if hwnd is None:
+            return None
+
+        return connect_by_hwnd(hwnd)
+
+    except Exception:
+        return None
+
+
 def connect_by_hwnd(hwnd: int) -> CDispatch | None:
     """Connect to Excel instance by window handle.
 
@@ -642,10 +729,6 @@ def connect_by_hwnd(hwnd: int) -> CDispatch | None:
         This method attempts to connect to an Excel instance
         by its window handle using Windows Accessibility API.
     """
-    import ctypes
-    from ctypes import c_void_p
-    from ctypes.wintypes import DWORD
-
     try:
         # Load oleacc.dll (Accessibility API)
         oleacc = ctypes.windll.oleacc
@@ -654,10 +737,10 @@ def connect_by_hwnd(hwnd: int) -> CDispatch | None:
         objid_nativeom = -16  # ID for native Office object
 
         # Get IDispatch from HWND
-        ptr = c_void_p()
+        ptr = ctypes.c_void_p()
         result = oleacc.AccessibleObjectFromWindow(
             hwnd,
-            DWORD(objid_nativeom),
+            ctypes.wintypes.DWORD(objid_nativeom),
             ctypes.byref(pythoncom.IID_IDispatch),
             ctypes.byref(ptr),
         )
