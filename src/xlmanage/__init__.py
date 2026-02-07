@@ -18,6 +18,8 @@ __all__ = [
     "WorksheetInfo",
     "TableManager",
     "TableInfo",
+    "MacroRunner",
+    "MacroResult",
     "ExcelConnectionError",
     "ExcelInstanceNotFoundError",
     "ExcelManageError",
@@ -69,6 +71,7 @@ from .exceptions import (
     WorksheetNameError,
     WorksheetNotFoundError,
 )
+from .macro_runner import MacroResult, MacroRunner
 from .table_manager import TableInfo as TableInfoData
 from .table_manager import TableManager
 from .workbook_manager import WorkbookInfo as WorkbookInfoClass

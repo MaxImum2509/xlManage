@@ -38,6 +38,7 @@ try:
         TableRangeError,
         VBAExportError,
         VBAImportError,
+        VBAMacroError,
         VBAModuleAlreadyExistsError,
         VBAModuleNotFoundError,
         VBAProjectAccessError,
@@ -50,6 +51,7 @@ try:
         WorksheetNameError,
         WorksheetNotFoundError,
     )
+    from .macro_runner import MacroResult, MacroRunner, _format_return_value
     from .table_manager import TableManager
     from .vba_manager import VBAManager
     from .workbook_manager import WorkbookManager
@@ -67,6 +69,7 @@ except ImportError:
         TableRangeError,
         VBAExportError,
         VBAImportError,
+        VBAMacroError,
         VBAModuleAlreadyExistsError,
         VBAModuleNotFoundError,
         VBAProjectAccessError,
@@ -79,6 +82,7 @@ except ImportError:
         WorksheetNameError,
         WorksheetNotFoundError,
     )
+    from xlmanage.macro_runner import MacroResult, MacroRunner, _format_return_value
     from xlmanage.table_manager import TableManager
     from xlmanage.vba_manager import VBAManager
     from xlmanage.workbook_manager import WorkbookManager
@@ -2065,6 +2069,181 @@ def vba_delete(
             Panel.fit(
                 f"[red]X[/red] Erreur\n\n[bold]Détails :[/bold] {e}",
                 title="Erreur",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+
+def _display_macro_result(result: MacroResult, console_obj: Console) -> None:
+    """Affiche le résultat d'exécution d'une macro avec Rich.
+
+    Args:
+        result: Résultat de MacroRunner.run()
+        console_obj: Console Rich pour l'affichage
+    """
+    if not result.success:
+        # Affichage erreur
+        console_obj.print(
+            Panel(
+                f"[red]{result.error_message}[/red]",
+                title=f"❌ Erreur lors de l'exécution de {result.macro_name}",
+                border_style="red",
+            )
+        )
+        return
+
+    # Affichage succès
+    if result.return_value is None:
+        # Sub VBA (pas de retour)
+        console_obj.print(
+            Panel(
+                "[green]La macro a été exécutée avec succès.[/green]\n"
+                "[dim]Aucune valeur de retour (probablement un Sub VBA)[/dim]",
+                title=f"✅ {result.macro_name}",
+                border_style="green",
+            )
+        )
+    else:
+        # Function VBA avec retour
+        # Formater la valeur
+        formatted_value = _format_return_value(result.return_value)
+
+        # Créer une table pour affichage structuré
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_row("[bold]Type:[/bold]", f"[cyan]{result.return_type}[/cyan]")
+        table.add_row("[bold]Valeur:[/bold]", f"[green]{formatted_value}[/green]")
+
+        console_obj.print(
+            Panel(
+                table,
+                title=f"✅ {result.macro_name}",
+                border_style="green",
+            )
+        )
+
+
+@app.command()
+def run_macro(
+    macro_name: str = typer.Argument(
+        ..., help="Nom de la macro VBA à exécuter (ex: 'Module1.MySub' ou 'MySub')"
+    ),
+    workbook: str | None = typer.Option(
+        None,
+        "--workbook",
+        "-w",
+        help=(
+            "Chemin du classeur contenant la macro "
+            "(optionnel, cherche dans actif + PERSONAL.XLSB sinon)"
+        ),
+    ),
+    args: str | None = typer.Option(
+        None,
+        "--args",
+        "-a",
+        help="Arguments CSV pour la macro (ex: '\"hello\",42,3.14,true')",
+    ),
+    timeout: int = typer.Option(
+        60,
+        "--timeout",
+        "-t",
+        help="Timeout d'exécution en secondes (défaut: 60s)",
+    ),
+) -> None:
+    """Exécute une macro VBA (Sub ou Function) avec arguments optionnels.
+
+    Cette commande permet de lancer des macros VBA depuis la ligne de commande
+    et d'afficher le résultat (valeur de retour pour les Function).
+
+    \b
+    Exemples:
+      xlmanage run-macro "Module1.SayHello"
+      xlmanage run-macro "Module1.GetSum" --args "10,20"
+      xlmanage run-macro "Module1.Process" -w "data.xlsm" -a '"Report",true'
+      xlmanage run-macro "Module1.LongTask" --timeout 120
+
+    \b
+    Format des arguments (--args):
+      Les arguments sont en format CSV avec conversion automatique de types:
+      - Chaînes: "hello" ou 'world'
+      - Nombres entiers: 42, -10
+      - Nombres décimaux: 3.14, -0.5
+      - Booléens: true, false (case-insensitive)
+      - Exemple: '"Report_2024",100,true,3.5'
+    """
+    try:
+        # Convertir workbook en Path si fourni
+        workbook_path: Path | None = None
+        if workbook:
+            workbook_path = Path(workbook)
+            if not workbook_path.exists():
+                console.print(
+                    f"[red]✗[/red] Fichier introuvable: {workbook}", style="red"
+                )
+                raise typer.Exit(code=1)
+
+        # Se connecter à Excel (réutiliser instance active ou créer)
+        with ExcelManager() as mgr:
+            try:
+                # Essayer de se connecter à une instance active
+                existing = mgr.get_running_instance()
+                if existing:
+                    console.print(
+                        f"[blue]→[/blue] Connexion à l'instance Excel existante "
+                        f"(PID {existing.pid})"
+                    )
+                else:
+                    # Démarrer une nouvelle instance
+                    console.print(
+                        "[blue]→[/blue] Démarrage d'une nouvelle instance Excel..."
+                    )
+                    mgr.start(new=False)
+
+            except ExcelConnectionError as e:
+                console.print(
+                    f"[red]✗[/red] Impossible de se connecter à Excel: {e.message}",
+                    style="red",
+                )
+                raise typer.Exit(code=1)
+
+            # Créer le runner et exécuter la macro
+            runner = MacroRunner(mgr)
+
+            console.print(f"[blue]→[/blue] Exécution de [bold]{macro_name}[/bold]...")
+
+            # Exécuter avec timeout (via signal ou threading selon OS)
+            # Pour simplifier, on exécute directement ici
+            # TODO: Implémenter timeout réel dans une version ultérieure
+            result = runner.run(
+                macro_name=macro_name, workbook=workbook_path, args=args
+            )
+
+            # Afficher le résultat
+            _display_macro_result(result, console)
+
+            # Exit code selon succès
+            if not result.success:
+                raise typer.Exit(code=1)
+
+    except VBAMacroError as e:
+        console.print(
+            Panel(
+                f"[red]Erreur VBA:[/red] {e.reason}",
+                title="❌ Échec d'exécution",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    except WorkbookNotFoundError as e:
+        console.print(f"[red]✗[/red] Classeur non ouvert: {e.path.name}", style="red")
+        raise typer.Exit(code=1)
+
+    except Exception as e:
+        console.print(
+            Panel(
+                f"[red]Erreur inattendue:[/red] {str(e)}",
+                title="❌ Erreur",
                 border_style="red",
             )
         )
