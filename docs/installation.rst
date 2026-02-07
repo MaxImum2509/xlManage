@@ -54,7 +54,7 @@ Using pip
    pip install .
 
 Verifying Installation
----------------------
+----------------------
 
 Check that xlManage is installed correctly:
 

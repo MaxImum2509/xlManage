@@ -14,7 +14,7 @@ To see all available commands and options:
    xlmanage --help
 
 Version Information
-^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 Check the installed version:
 
@@ -26,7 +26,7 @@ Common Workflows
 ----------------
 
 Opening Excel Files
-^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -37,7 +37,7 @@ Opening Excel Files
    xlmanage open file1.xlsx file2.xlsx
 
 Managing Worksheets
-^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -48,7 +48,7 @@ Managing Worksheets
    xlmanage add-sheet workbook.xlsx "NewSheet"
 
 Data Operations
-^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -97,7 +97,7 @@ Example configuration:
    log_level: INFO
 
 Environment Variables
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -111,7 +111,7 @@ Examples
 --------
 
 Basic Example
-^^^^^^^^^^^^
+^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -119,7 +119,7 @@ Basic Example
    xlmanage optimize input.xlsx output.xlsx
 
 Advanced Example
-^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
