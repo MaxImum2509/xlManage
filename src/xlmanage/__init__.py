@@ -1,5 +1,20 @@
 """
-xlmanage package initialization.
+xlmanage package initialization - Exports publics et version.
+
+This file is part of xlManage.
+
+xlManage is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+xlManage is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 __version__ = "0.1.0"
@@ -18,8 +33,14 @@ __all__ = [
     "WorksheetInfo",
     "TableManager",
     "TableInfo",
+    "VBAManager",
+    "VBAModuleInfo",
     "MacroRunner",
     "MacroResult",
+    "ExcelOptimizer",
+    "ScreenOptimizer",
+    "CalculationOptimizer",
+    "OptimizationState",
     "ExcelConnectionError",
     "ExcelInstanceNotFoundError",
     "ExcelManageError",
@@ -44,9 +65,10 @@ __all__ = [
     "VBAWorkbookFormatError",
 ]
 
-# Import exceptions for easy access
 # Import main classes
+from .calculation_optimizer import CalculationOptimizer
 from .excel_manager import ExcelManager, InstanceInfo
+from .excel_optimizer import ExcelOptimizer, OptimizationState
 from .exceptions import (
     ExcelConnectionError,
     ExcelInstanceNotFoundError,
@@ -72,16 +94,8 @@ from .exceptions import (
     WorksheetNotFoundError,
 )
 from .macro_runner import MacroResult, MacroRunner
-from .table_manager import TableInfo as TableInfoData
-from .table_manager import TableManager
-from .workbook_manager import WorkbookInfo as WorkbookInfoClass
-from .workbook_manager import WorkbookManager
-from .worksheet_manager import WorksheetInfo as WorksheetInfoData
-from .worksheet_manager import WorksheetManager
-
-# Export both for clarity
-# Note: Use WorkbookInfoClass for workbook info, WorksheetInfoData for
-# worksheet info, TableInfoData for table info
-WorkbookInfo = WorkbookInfoClass
-WorksheetInfo = WorksheetInfoData
-TableInfo = TableInfoData
+from .screen_optimizer import ScreenOptimizer
+from .table_manager import TableInfo, TableManager
+from .vba_manager import VBAManager, VBAModuleInfo
+from .workbook_manager import WorkbookInfo, WorkbookManager
+from .worksheet_manager import WorksheetInfo, WorksheetManager
