@@ -569,12 +569,12 @@ def optimize(
 
             # --status : afficher l'état actuel
             if status_opt:
-                _display_optimization_status(app_com, console)
+                _display_optimization_status(excel_mgr, console)
                 return
 
             # --restore : restaurer les paramètres
             if restore:
-                _restore_optimizations(app_com, screen, calculation, all_opt, console)
+                _restore_optimizations(excel_mgr, screen, calculation, all_opt, console)
                 return
 
             # --force-calculate : forcer le recalcul
@@ -584,21 +584,21 @@ def optimize(
 
             # --screen : optimiser l'écran
             if screen:
-                screen_opt = ScreenOptimizer(app_com)
+                screen_opt = ScreenOptimizer(excel_mgr)
                 state = screen_opt.apply()
                 _display_applied_optimizations(state, console)
                 return
 
             # --calculation : optimiser le calcul
             if calculation:
-                calc_opt = CalculationOptimizer(app_com)
+                calc_opt = CalculationOptimizer(excel_mgr)
                 state = calc_opt.apply()
                 _display_applied_optimizations(state, console)
                 return
 
             # --all : tout optimiser
             if all_opt:
-                excel_opt = ExcelOptimizer(app_com)
+                excel_opt = ExcelOptimizer(excel_mgr)
                 state = excel_opt.apply()
                 _display_applied_optimizations(state, console)
                 return
@@ -623,14 +623,14 @@ def optimize(
         raise typer.Exit(code=1)
 
 
-def _display_optimization_status(app_com, console_obj: Console) -> None:
+def _display_optimization_status(excel_mgr, console_obj: Console) -> None:
     """Affiche l'état actuel des paramètres Excel."""
     try:
         from .excel_optimizer import ExcelOptimizer
     except ImportError:
         from xlmanage.excel_optimizer import ExcelOptimizer
 
-    optimizer = ExcelOptimizer(app_com)
+    optimizer = ExcelOptimizer(excel_mgr)
     settings = optimizer.get_current_settings()
 
     if not settings:
@@ -680,7 +680,7 @@ def _display_optimization_status(app_com, console_obj: Console) -> None:
 
 
 def _restore_optimizations(
-    app_com, screen: bool, calculation: bool, all_opt: bool, console_obj: Console
+    excel_mgr, screen: bool, calculation: bool, all_opt: bool, console_obj: Console
 ) -> None:
     """Restaure les paramètres optimisés."""
     try:
@@ -695,11 +695,11 @@ def _restore_optimizations(
     try:
         optimizer: ScreenOptimizer | CalculationOptimizer | ExcelOptimizer
         if screen:
-            optimizer = ScreenOptimizer(app_com)
+            optimizer = ScreenOptimizer(excel_mgr)
         elif calculation:
-            optimizer = CalculationOptimizer(app_com)
+            optimizer = CalculationOptimizer(excel_mgr)
         else:  # all_opt
-            optimizer = ExcelOptimizer(app_com)
+            optimizer = ExcelOptimizer(excel_mgr)
 
         optimizer.restore()
 

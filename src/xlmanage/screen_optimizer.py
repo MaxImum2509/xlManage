@@ -18,11 +18,12 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from datetime import datetime
-from typing import Any
-
-from win32com.client import CDispatch
+from typing import TYPE_CHECKING, Any
 
 from .excel_optimizer import OptimizationState
+
+if TYPE_CHECKING:
+    from .excel_manager import ExcelManager
 
 
 class ScreenOptimizer:
@@ -46,13 +47,14 @@ class ScreenOptimizer:
         >>> optimizer.restore()
     """
 
-    def __init__(self, app: CDispatch) -> None:
+    def __init__(self, excel_manager: "ExcelManager") -> None:
         """Initialise l'optimiseur d'écran.
 
         Args:
-            app: Objet COM Excel.Application
+            excel_manager: Instance ExcelManager (doit être démarrée)
         """
-        self._app = app
+        self._mgr = excel_manager
+        self._app = excel_manager.app
         self._original_settings: dict[str, Any] = {}
 
     def __enter__(self) -> "ScreenOptimizer":

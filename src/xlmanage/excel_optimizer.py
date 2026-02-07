@@ -19,9 +19,10 @@ along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from win32com.client import CDispatch
+if TYPE_CHECKING:
+    from .excel_manager import ExcelManager
 
 
 @dataclass
@@ -66,13 +67,14 @@ class ExcelOptimizer:
         >>> optimizer.restore()  # Restauration manuelle
     """
 
-    def __init__(self, app: CDispatch) -> None:
+    def __init__(self, excel_manager: "ExcelManager") -> None:
         """Initialise l'optimiseur avec une instance Excel.
 
         Args:
-            app: Objet COM Excel.Application
+            excel_manager: Instance ExcelManager (doit être démarrée)
         """
-        self._app = app
+        self._mgr = excel_manager
+        self._app = excel_manager.app
         self._original_settings: dict[str, Any] = {}
 
     def __enter__(self) -> "ExcelOptimizer":
@@ -107,10 +109,18 @@ class ExcelOptimizer:
         # Appliquer les optimisations
         self._apply_optimizations()
 
+        # Extraire les sous-ensembles screen et calculation
+        screen_keys = {"ScreenUpdating", "DisplayStatusBar", "EnableAnimations"}
+        calc_keys = {"Calculation", "Iteration", "MaxIterations", "MaxChange"}
+
         # Créer et retourner l'état
         return OptimizationState(
-            screen={},
-            calculation={},
+            screen={
+                k: v for k, v in self._original_settings.items() if k in screen_keys
+            },
+            calculation={
+                k: v for k, v in self._original_settings.items() if k in calc_keys
+            },
             full=self._original_settings.copy() if self._original_settings else {},
             applied_at=datetime.now().isoformat(),
             optimizer_type="all",
@@ -151,6 +161,8 @@ class ExcelOptimizer:
                 "DisplayAlerts": self._app.DisplayAlerts,
                 "AskToUpdateLinks": self._app.AskToUpdateLinks,
                 "Iteration": self._app.Iteration,
+                "MaxIterations": self._app.MaxIterations,
+                "MaxChange": self._app.MaxChange,
             }
         except Exception:
             # Si une propriété n'est pas accessible, retourner un dict vide
@@ -168,6 +180,8 @@ class ExcelOptimizer:
                 "DisplayAlerts": self._app.DisplayAlerts,
                 "AskToUpdateLinks": self._app.AskToUpdateLinks,
                 "Iteration": self._app.Iteration,
+                "MaxIterations": self._app.MaxIterations,
+                "MaxChange": self._app.MaxChange,
             }
         except Exception:
             # En cas d'erreur, initialiser un dict vide

@@ -35,16 +35,24 @@ def mock_app():
     return app
 
 
-def test_calculation_optimizer_init(mock_app):
+@pytest.fixture
+def mock_excel_mgr(mock_app):
+    """Fixture providing a mock ExcelManager."""
+    mgr = Mock()
+    mgr.app = mock_app
+    return mgr
+
+
+def test_calculation_optimizer_init(mock_excel_mgr, mock_app):
     """Test CalculationOptimizer initialization."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
     assert optimizer._app is mock_app
     assert optimizer._original_settings == {}
 
 
-def test_calculation_optimizer_apply_restore(mock_app):
+def test_calculation_optimizer_apply_restore(mock_excel_mgr, mock_app):
     """Test apply/restore workflow without context manager."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     # État initial
     mock_app.Calculation = -4105  # xlCalculationAutomatic
@@ -70,17 +78,17 @@ def test_calculation_optimizer_apply_restore(mock_app):
     assert mock_app.Calculation == -4105
 
 
-def test_calculation_optimizer_restore_without_apply(mock_app):
+def test_calculation_optimizer_restore_without_apply(mock_excel_mgr, mock_app):
     """Test error when calling restore() before apply()."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     with pytest.raises(RuntimeError, match="no settings were saved"):
         optimizer.restore()
 
 
-def test_calculation_optimizer_get_current_settings(mock_app):
+def test_calculation_optimizer_get_current_settings(mock_excel_mgr, mock_app):
     """Test get_current_settings() returns calculation properties."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     settings = optimizer.get_current_settings()
 
@@ -91,9 +99,9 @@ def test_calculation_optimizer_get_current_settings(mock_app):
     assert len(settings) == 4
 
 
-def test_calculation_optimizer_context_manager_still_works(mock_app):
+def test_calculation_optimizer_context_manager_still_works(mock_excel_mgr, mock_app):
     """Test that existing context manager usage still works."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     mock_app.Calculation = -4105  # xlCalculationAutomatic
 
@@ -105,9 +113,9 @@ def test_calculation_optimizer_context_manager_still_works(mock_app):
     assert mock_app.Calculation == -4105
 
 
-def test_calculation_optimizer_apply_exception_handling(mock_app):
+def test_calculation_optimizer_apply_exception_handling(mock_excel_mgr, mock_app):
     """Test that exceptions during apply are handled gracefully."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     # Simuler une erreur sur une propriété
     def raise_error():
@@ -120,9 +128,9 @@ def test_calculation_optimizer_apply_exception_handling(mock_app):
     assert isinstance(state, OptimizationState)
 
 
-def test_calculation_optimizer_get_current_settings_error(mock_app):
+def test_calculation_optimizer_get_current_settings_error(mock_excel_mgr, mock_app):
     """Test get_current_settings with COM errors."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     # Simuler des erreurs sur toutes les propriétés
     for prop in ["Calculation", "Iteration", "MaxIterations", "MaxChange"]:
@@ -132,9 +140,9 @@ def test_calculation_optimizer_get_current_settings_error(mock_app):
     assert settings == {}
 
 
-def test_calculation_optimizer_context_manager_with_exception(mock_app):
+def test_calculation_optimizer_context_manager_with_exception(mock_excel_mgr, mock_app):
     """Test context manager restores settings even with exception."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     mock_app.Calculation = -4105
 
@@ -149,9 +157,9 @@ def test_calculation_optimizer_context_manager_with_exception(mock_app):
     assert mock_app.Calculation == -4105
 
 
-def test_calculation_optimizer_optimization_state_structure(mock_app):
+def test_calculation_optimizer_optimization_state_structure(mock_excel_mgr, mock_app):
     """Test that OptimizationState has correct structure for calculation optimizer."""
-    optimizer = CalculationOptimizer(mock_app)
+    optimizer = CalculationOptimizer(mock_excel_mgr)
 
     state = optimizer.apply()
 

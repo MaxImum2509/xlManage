@@ -41,16 +41,24 @@ def mock_app():
     return app
 
 
-def test_excel_optimizer_init(mock_app):
+@pytest.fixture
+def mock_excel_mgr(mock_app):
+    """Fixture providing a mock ExcelManager."""
+    mgr = Mock()
+    mgr.app = mock_app
+    return mgr
+
+
+def test_excel_optimizer_init(mock_excel_mgr, mock_app):
     """Test ExcelOptimizer initialization."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
     assert optimizer._app is mock_app
     assert optimizer._original_settings == {}
 
 
-def test_excel_optimizer_apply_restore(mock_app):
+def test_excel_optimizer_apply_restore(mock_excel_mgr, mock_app):
     """Test apply/restore workflow without context manager."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     # État initial
     mock_app.ScreenUpdating = True
@@ -74,7 +82,9 @@ def test_excel_optimizer_apply_restore(mock_app):
     assert isinstance(state, OptimizationState)
     assert state.optimizer_type == "all"
     assert state.applied_at  # Timestamp présent
-    assert len(state.full) == 8  # 8 propriétés sauvegardées
+    assert len(state.full) == 10  # 10 propriétés sauvegardées
+    assert len(state.screen) == 3  # 3 propriétés d'écran
+    assert len(state.calculation) == 4  # 4 propriétés de calcul
 
     # Restaurer
     optimizer.restore()
@@ -85,17 +95,17 @@ def test_excel_optimizer_apply_restore(mock_app):
     assert mock_app.Calculation == -4105
 
 
-def test_excel_optimizer_restore_without_apply(mock_app):
+def test_excel_optimizer_restore_without_apply(mock_excel_mgr, mock_app):
     """Test error when calling restore() before apply()."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     with pytest.raises(RuntimeError, match="no settings were saved"):
         optimizer.restore()
 
 
-def test_excel_optimizer_get_current_settings(mock_app):
+def test_excel_optimizer_get_current_settings(mock_excel_mgr, mock_app):
     """Test get_current_settings() returns all properties."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     settings = optimizer.get_current_settings()
 
@@ -107,12 +117,14 @@ def test_excel_optimizer_get_current_settings(mock_app):
     assert "DisplayStatusBar" in settings
     assert "AskToUpdateLinks" in settings
     assert "Iteration" in settings
-    assert len(settings) == 8
+    assert "MaxIterations" in settings
+    assert "MaxChange" in settings
+    assert len(settings) == 10
 
 
-def test_excel_optimizer_context_manager_still_works(mock_app):
+def test_excel_optimizer_context_manager_still_works(mock_excel_mgr, mock_app):
     """Test that existing context manager usage still works."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     mock_app.ScreenUpdating = True
     mock_app.DisplayAlerts = True
@@ -127,9 +139,9 @@ def test_excel_optimizer_context_manager_still_works(mock_app):
     assert mock_app.DisplayAlerts is True
 
 
-def test_excel_optimizer_apply_exception_handling(mock_app):
+def test_excel_optimizer_apply_exception_handling(mock_excel_mgr, mock_app):
     """Test that exceptions during apply are handled gracefully."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     # Simuler une erreur sur une propriété
     def raise_error():
@@ -142,9 +154,9 @@ def test_excel_optimizer_apply_exception_handling(mock_app):
     assert isinstance(state, OptimizationState)
 
 
-def test_excel_optimizer_get_current_settings_error(mock_app):
+def test_excel_optimizer_get_current_settings_error(mock_excel_mgr, mock_app):
     """Test get_current_settings with COM errors."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     # Simuler des erreurs sur toutes les propriétés
     for prop in ["ScreenUpdating", "DisplayAlerts", "Calculation"]:
@@ -154,9 +166,9 @@ def test_excel_optimizer_get_current_settings_error(mock_app):
     assert settings == {}
 
 
-def test_excel_optimizer_multiple_apply_calls(mock_app):
+def test_excel_optimizer_multiple_apply_calls(mock_excel_mgr, mock_app):
     """Test calling apply() multiple times."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     # Premier apply
     state1 = optimizer.apply()
@@ -171,9 +183,9 @@ def test_excel_optimizer_multiple_apply_calls(mock_app):
     # Les paramètres sont restaurés (peu importe si c'était déjà False)
 
 
-def test_excel_optimizer_context_manager_with_exception(mock_app):
+def test_excel_optimizer_context_manager_with_exception(mock_excel_mgr, mock_app):
     """Test context manager restores settings even with exception."""
-    optimizer = ExcelOptimizer(mock_app)
+    optimizer = ExcelOptimizer(mock_excel_mgr)
 
     mock_app.ScreenUpdating = True
 
