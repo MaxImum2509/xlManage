@@ -4,13 +4,13 @@
 
 ### OBLIGATIONS
 
-- **OBL-001** : Fichiers .bas/.cls/.frm en **Windows-1252** + CRLF (`\r\n`).
+- **OBL-001** : Fichiers .bas/.cls/.frm en **Windows-1252** + CRLF (`\r\n`) - transcrire à partir d'UTF-8 si nécessaire.
 - **OBL-002** : Chemins POSIX `/` partout (portable Win/Mac).
 
 ### INTERDICTIONS
 
 - **INT-001** : Emojis code/strings.
-- **INT-002** : `Option Explicit` absent ; `Select/Activate`.
+- **INT-002** : `Option Explicit` absent.
 
 ## Naming & Structure
 
@@ -19,13 +19,18 @@
 - **OBL-003** : Français PascalCase.
 - **OBL-004** : `modXXX.bas` / `clsYYY.cls` / `frmZZZ.frm`.
 - **OBL-005** : **Option Explicit** tête module.
-- **OBL-006** : Ordre : **en-tête module**, Option Explicit, consts, events, procs.
+- **OBL-006** :
+    - pour les modules de classe ou les modules normaux repecter l’ordre : en-tête module, Option Explicit, consts, events, procs.
+    - pour les UserForms : en-tête, Option Explicit, variables de module (avec WithEvents), constantes, événements du formulaire (Initialize, Activate, Deactivate), événements des contrôles (Click, Change, etc.), procédures publiques, procédures privées, événements liés à Excel (si applicable).
 - **OBL-007** : En-tête module :
 
 ```
-' modConfiguration.bas - Configuration tbAffaires (VBA sync xlManage)
+' mod[nom module].bas - [nom module] tbAffaires
 '
+'-------------------------------------------------------------------------------
 ' GPL v3 - LICENSE
+'-------------------------------------------------------------------------------
+'
 ' Auteur : ...
 ' Date : ...
 ' Objet : ...
@@ -47,11 +52,15 @@
 ### OBLIGATIONS
 
 - **OBL-009** : ListObject tables ; Range cellules.
-- **OBL-010** : Arrays bulk R/W.
-- **OBL-011** : RAII ExcelOptimizer.
+- **OBL-010** : Arrays bulk R/W (jusqu'à 100000 lignes, 50 colonnes).
+- **OBL-011** : RAII ExcelOptimizer (Set opt = New clsExcelOptimizer en début de procédure et Set opt = Nothing en fin de procédure, utilisé même pour les procédures courtes).
 - **OBL-012** : UserForm MVVM.
 - **OBL-013** : Error : On Error GoTo + CleanUp + Log.
 - **OBL-014** : Cache refs.
+
+### INTERDICTIONS
+
+- **INT-003** : Ne JAMAIS utiliser `Select` ou `Activate` SAUF pour indiquer position initiale utilisateur (utiliser `Range("X").Select` avant de rendre la main).
 
 ## Commentaires & Clean Code
 
@@ -70,5 +79,5 @@
 
 ### OBLIGATIONS
 
-- **OBL-018** : Header GPL v3.
+- **OBL-018** : Header GPL v3 (conserver le modèle mentionné dans AGENTS.md).
 - **OBL-019** : Docstrings tous procs/classes (format OBL-008).
