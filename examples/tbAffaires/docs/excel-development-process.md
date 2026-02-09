@@ -69,8 +69,8 @@ Approche minimale (import fichier par fichier):
 poetry run xlmanage start --new --visible
 poetry run xlmanage workbook open tbAffaires.xlsm
 
-poetry run xlmanage vba import src/modl_Utils.bas --workbook tbAffaires.xlsm --overwrite
-poetry run xlmanage vba import src/clsApplicationState.cls --workbook tbAffaires.xlsm --overwrite
+poetry run xlmanage vba import src/modUtils.bas --workbook tbAffaires.xlsm --overwrite
+poetry run xlmanage vba import src/clsOptimizer.cls --workbook tbAffaires.xlsm --overwrite
 ```
 
 Approche robuste (batch):
