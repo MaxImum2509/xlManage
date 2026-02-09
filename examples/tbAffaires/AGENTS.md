@@ -23,7 +23,7 @@
 **Fonctionnalités:**
 
 - ID: Environ("USERNAME") → tbADV
-- RAII: clsApplicationState
+- RAII: clsOptimizer
 - Double dialogue : fichier consolidé (opt.) + ERP (requis)
 - Filtre ADV ListObject
 - Commentaires depuis fichier consolidé

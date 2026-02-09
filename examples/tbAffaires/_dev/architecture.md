@@ -90,7 +90,7 @@ Chaque module a une responsabilité unique. Le code source est versionné dans `
 
 | Module                | Fichier source            | Responsabilité                                   |
 | --------------------- | ------------------------- | ------------------------------------------------ |
-| `clsApplicationState` | `clsApplicationState.cls` | Classe RAII (gestion état Excel)                 |
+| `clsOptimizer`        | `clsOptimizer.cls`        | Classe RAII (gestion état Excel)                 |
 | `modUtils`            | `modUtils.bas`            | Helpers, constantes, gestion d'erreurs           |
 | `modConfiguration`    | `modConfiguration.bas`    | Chargement configuration depuis data.xlsx (tbADV, tbParametres, tbMapping) |
 | `modLogging`          | `modLogging.bas`          | Logging (INFO, ERREUR, SUCCES)                   |
@@ -291,7 +291,7 @@ Ce schéma montre le parcours des données du démarrage à la fin de session :
 
 | Catégorie     | Exigences | Modules impliqués                               |
 | ------------- | --------- | ----------------------------------------------- |
-| Session       | FR1-FR5   | clsApplicationState, modConfiguration, modUtils |
+| Session       | FR1-FR5   | clsOptimizer, modConfiguration, modUtils |
 | Données       | FR6-FR11  | modExtraction (2 dialogues), modConfiguration   |
 | Filtrage      | FR12-FR16 | modFiltrage                                     |
 | Saisie        | FR17-FR19 | (Excel natif, pas de module VBA dédié)          |

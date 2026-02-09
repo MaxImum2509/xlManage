@@ -129,7 +129,7 @@ Ce document décompose les exigences du PRD et de l'architecture en epics et sto
 | Module VBA            | Fichier source                | Stories           |
 | --------------------- | ----------------------------- | ----------------- |
 | `modUtils`            | `src/modUtils.bas`            | **1.6**           |
-| `clsApplicationState` | `src/clsApplicationState.cls` | **1.2**           |
+| `clsOptimizer`        | `src/clsOptimizer.cls`        | **1.2**           |
 | `modConfiguration`    | `src/modConfiguration.bas`    | **1.1**, 1.3, 1.4 |
 | `modLogging`          | `src/modLogging.bas`          | **5.1**           |
 | `modTimer`            | `src/modTimer.bas`            | **5.2**           |
@@ -193,7 +193,7 @@ L'ordre suit les dépendances entre modules. Chaque étape suppose les précéde
 Phase 1 - Fondations
 - [X]  Story 1.6  modUtils (constantes, helpers, gestion d'erreurs)
 - [X]  Story 5.1  modLogging (logging utilisé par tous les modules)
-- [ ]  Story 1.2  clsApplicationState (RAII)
+- [X]  Story 1.2  clsOptimizer (RAII)
 
 Phase 2 - Configuration et Session
 - [ ]    Story 1.1  Structure fichiers + data.xlsx (tbADV, tbParametres, tbMapping)
@@ -266,13 +266,13 @@ L'utilisateur peut démarrer l'application, être identifié automatiquement, et
 
 ---
 
-### Story 1.2: Implémenter le pattern RAII avec clsApplicationState
+### Story 1.2: Implémenter le pattern RAII avec clsOptimizer
 
 **En tant qu'** ADV,
 **Je veux** que l'application optimise Excel au démarrage et restaure l'état à la fermeture,
 **Afin de** bénéficier de performances maximales et éviter les problèmes d'état Excel.
 
-**Module VBA :** `clsApplicationState` (`src/clsApplicationState.cls`)
+**Module VBA :** `clsOptimizer` (`src/clsOptimizer.cls`)
 
 **Critères d'Acceptation :**
 
@@ -798,7 +798,7 @@ L'ADV saisit ses commentaires et les consolide de manière fiable dans le fichie
 
 **Étant donné** qu'une erreur inattendue survient pendant la consolidation (erreur VBA, crash)
 **Quand** la gestion d'erreur intercepte l'exception
-**Alors** l'état Excel est restauré par le RAII (clsApplicationState) et le fichier de suivi partagé n'est pas corrompu (fermeture sans sauvegarde en cas d'erreur pendant l'UPSERT)
+**Alors** l'état Excel est restauré par le RAII (clsOptimizer) et le fichier de suivi partagé n'est pas corrompu (fermeture sans sauvegarde en cas d'erreur pendant l'UPSERT)
 
 **Étant donné** que le backup a été créé avant la consolidation
 **Quand** une corruption du fichier partagé est détectée
@@ -917,7 +917,7 @@ Exemple : `2026-01-23 14:32:15 | Patrick | Consolidation 50 affaires | SUCCES (0
 
 | Epic               | Stories | Modules VBA                                      | FRs        | NFRs        |
 | ------------------ | ------- | ------------------------------------------------ | ---------- | ----------- |
-| 1 - Infrastructure | 6       | clsApplicationState, modConfiguration, modUtils  | 11         | 8           |
+| 1 - Infrastructure | 6       | clsOptimizer, modConfiguration, modUtils  | 11         | 8           |
 | 2 - Chargement     | 5       | modExtraction, modCommentaires, modConsolidation | 6          | 2           |
 | 3 - Filtrage       | 4       | modFiltrage                                      | 5          | 1           |
 | 4 - Consolidation  | 4       | modConsolidation                                 | 7          | 4           |
