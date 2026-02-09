@@ -1,125 +1,185 @@
+# Architecture Technique - tbAffaires
+
+> Ce document décrit **uniquement l'architecture technique** du projet.
+> Pour les règles de codage : `docs/excel-development-rules.md` et `docs/python-development-rules.md`.
+> Pour le processus de développement : `docs/excel-development-process.md`.
+> Pour les règles d'implémentation : `project-context.md` (racine du projet).
+
+## Glossaire
+
+| Terme          | Signification                                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| **ADV**        | Assistante De Vente (utilisatrice de l'application, 3 au total)                                            |
+| **ERP**        | Progiciel de gestion intégré (source des données d'affaires)                                               |
+| **RAII**       | Resource Acquisition Is Initialization : un objet acquiert des ressources à sa création et les libère automatiquement à sa destruction, même en cas d'erreur |
+| **UPSERT**     | Update + Insert : met à jour les lignes existantes et insère les nouvelles en une seule opération           |
+| **ListObject** | Tableau structuré Excel (créé via Insertion > Tableau). Permet de manipuler les données par colonnes nommées au lieu d'adresses de cellules |
+| **Trigramme**  | Code à 3 lettres identifiant un ADV (ex : PAT, SOC, MAR)                                                  |
+| **Fichier consolidé** | Fichier Excel de suivi hebdomadaire (ex : `Suivi affaires 2026-S05.xlsx`). Contient toutes les données consolidées des ADV, y compris les commentaires. Sert de livrable pour la direction et de source de commentaires historiques pour la semaine suivante. |
+
 ---
-stepsCompleted: [1, 2, 3, 4, 5, 6]
-inputDocuments:
-  - path: '_bmad-output/planning-artifacts/product-brief-tbAffaires-2026-01-23.md'
-    type: 'product-brief'
-  - path: '_bmad-output/planning-artifacts/prd.md'
-    type: 'prd'
-workflowType: 'architecture'
-project_name: 'tbAffaires'
-date: '2026-01-23'
-last_updated: '2026-01-29'
-author: 'Patrick'
-update_reason: 'Alignement avec PRD - Arbitrages Patrick intégrés + Documentation créée'
----
 
-# Architecture Decision Document
-
-> **📖 RÈGLES D'IMPLÉMENTATION** : Voir `project-context.md` à la racine du projet (LA BIBLE pour SM et Dev)
-
-## Project Context
+## Contexte du Projet
 
 ### Domaine et Complexité
 
-- **Domaine** : Desktop App (VBA/Excel)
+- **Domaine** : Application desktop VBA/Excel
 - **Complexité** : Faible-Moyenne
 - **Composants** : 8-10 modules VBA
 
-### Exigences Clés
+### Exigences Fonctionnelles (FR1-FR34)
 
-**Fonctionnelles (FR1-FR34)** : Gestion session RAII, chargement données ERP, filtrage ADV, saisie commentaires, consolidation UPSERT, logging, configuration externe.
+Gestion session RAII, chargement données ERP, filtrage ADV, saisie commentaires, consolidation UPSERT, logging, configuration externe.
 
-**Non-Fonctionnelles** :
-- Performance : < 5 sec par opération, 800 affaires/ADV
-- Fiabilité : 100% disponibilité vendredi, 0% perte données
-- Maintenabilité : Code compréhensible par non-experts VBA
+### Exigences Non-Fonctionnelles
+
+| Exigence         | Cible                                      |
+| ---------------- | ------------------------------------------ |
+| Performance      | < 5 sec par opération, 800 affaires/ADV    |
+| Fiabilité        | 100% disponibilité vendredi, 0% perte données |
+| Maintenabilité   | Code compréhensible par non-experts VBA    |
 
 ### Contraintes Techniques
 
-| Contrainte | Valeur |
-|------------|--------|
-| Plateforme | Windows + Excel 2016+ |
-| Infrastructure | Active Directory uniquement (pas de cloud) |
-| Persistance | Fichiers Excel (pas de BDD) |
-| Concurrence | Fichier unique partagé entre 3 ADV |
-| Budget | Pas d'investissement ERP |
-| Outil développement VBA | VBA Toolkit (Python + pywin32) dans scripts/ - **V2 uniquement** |
-
-### Règles Métier Immuables
-
-**RÈGLE 1 : Unicité de l'Admin (CRITIQUE)**
-- UN SEUL utilisateur peut avoir `IsAdmin = Oui` dans tbADV
-- Si deux admins détectés → ERREUR BLOQUANTE au démarrage (ERR-002)
-- L'unicité est validée systématiquement par `modConfiguration`
-
-**RÈGLE 2 : 1 Affaire = 1 ADV (CONCURRENCE)**
-- Chaque affaire appartient à UN SEUL ADV (plage exclusive)
-- Pas de conflit de données possible (seulement conflit de fichier)
-- Si un ADV est absent n semaines (n > 1), ses affaires ne sont PAS mises à jour automatiquement
-- L'admin doit consolider manuellement via Mode Admin pour les absences prolongées
-
-**RÈGLE 3 : Validation Stricte du Mapping**
-- Toutes les colonnes du mapping doivent être présentes dans l'extraction ERP
-- Vérification AVANT tout traitement
-- Message d'erreur clair si colonne manquante (ERR-101)
-
-**RÈGLE 4 : Extraction Repart à Zéro Chaque Année**
-- Le fichier d'extraction ERP repart à 0 affaires en début d'année
-- Pas de problème de volume croissant à gérer
-- Simplification de l'architecture
+| Contrainte              | Valeur                                     |
+| ----------------------- | ------------------------------------------ |
+| Plateforme              | Windows + Excel 2016+                      |
+| Infrastructure          | Active Directory uniquement (pas de cloud) |
+| Persistance             | Fichiers Excel (pas de BDD)               |
+| Concurrence             | Fichier unique partagé entre 3 ADV         |
+| Budget                  | Pas d'investissement ERP                   |
+| Outil développement VBA | xlManage (Python + pywin32)                |
 
 ---
 
-## Core Architectural Decisions
+## Règles Métier Immuables
 
-### Structure des Modules VBA
+> Ces règles sont **non-négociables**. Elles définissent le comportement attendu de l'application. Toute modification nécessite une validation métier.
 
-| Module | Responsabilité |
-|--------|----------------|
-| `clsApplicationState` | Classe RAII (gestion état Excel) - préfixe cls pour les classes |
-| `modUtils` | Helpers, constantes, error handlers |
-| `modConfiguration` | Chargement data.xlsx |
-| `modLogging` | Logging (INFO, ERREUR, SUCCES) |
-| `modTimer` | Mesure performance |
-| `modExtraction` | Chargement fichier ERP |
-| `modFiltrage` | Filtrage par trigramme ADV |
-| `modConsolidation` | UPSERT + retry + sauvegardes |
-| `modCommentaires` | Gestion historique commentaires (chargement/sauvegarde tbCommentaires) |
+### RÈGLE 1 : Unicité de l'Admin (CRITIQUE)
 
-### Structure data.xlsx
+- **UN SEUL** utilisateur peut avoir `IsAdmin = Oui` dans tbADV
+- Si deux admins détectés → **ERREUR BLOQUANTE** au démarrage (ERR-002)
+- L'unicité est validée systématiquement par `modConfiguration`
 
-**RÈGLE CRITIQUE** : Chaque ListObject **DOIT** être isolé dans sa propre feuille.
+### RÈGLE 2 : 1 Affaire = 1 ADV (CONCURRENCE)
 
-- Feuille "ADV" → **tbADV** (uniquement)
-- Feuille "Configuration" → **tbParametres** (uniquement)
-- Feuille "Mapping" → **tbMapping** (uniquement)
-- Feuille "Commentaires" → **tbCommentaires** (uniquement) - *Historique centralisé des commentaires*
+- Chaque affaire appartient à **UN SEUL** ADV (plage exclusive)
+- Pas de conflit de données possible (seulement conflit d'accès au fichier)
+- Si un ADV est absent plus d'une semaine, ses affaires ne sont PAS mises à jour automatiquement
+- L'admin doit consolider manuellement via Mode Admin pour les absences prolongées
+
+### RÈGLE 3 : Validation Stricte du Mapping
+
+- Toutes les colonnes du mapping doivent être présentes dans l'extraction ERP
+- Vérification **AVANT** tout traitement
+- Message d'erreur clair si colonne manquante (ERR-101)
+
+### RÈGLE 4 : Extraction Repart à Zéro Chaque Année
+
+- Le fichier d'extraction ERP repart à 0 affaires en début d'année
+- Pas de problème de volume croissant à gérer
+- Le fichier consolidé de l'année précédente n'est plus utilisé
+- En début d'année, l'ADV peut ne pas avoir de fichier consolidé : les commentaires sont alors vides
+
+---
+
+## Architecture des Modules VBA
+
+Chaque module a une responsabilité unique. Le code source est versionné dans `src/` sous forme de fichiers texte (`.bas` pour les modules standard, `.cls` pour les classes).
+
+| Module                | Fichier source            | Responsabilité                                   |
+| --------------------- | ------------------------- | ------------------------------------------------ |
+| `clsApplicationState` | `clsApplicationState.cls` | Classe RAII (gestion état Excel)                 |
+| `modUtils`            | `modUtils.bas`            | Helpers, constantes, gestion d'erreurs           |
+| `modConfiguration`    | `modConfiguration.bas`    | Chargement configuration depuis data.xlsx (tbADV, tbParametres, tbMapping) |
+| `modLogging`          | `modLogging.bas`          | Logging (INFO, ERREUR, SUCCES)                   |
+| `modTimer`            | `modTimer.bas`            | Mesure de performance                            |
+| `modExtraction`       | `modExtraction.bas`       | Sélection fichiers (consolidé + ERP) et chargement ERP |
+| `modFiltrage`         | `modFiltrage.bas`         | Filtrage par trigramme ADV                       |
+| `modConsolidation`    | `modConsolidation.bas`    | UPSERT + retry + sauvegardes (inclut colonne Commentaire) |
+| `modCommentaires`     | `modCommentaires.bas`     | Extraction des commentaires depuis le fichier consolidé précédent |
+
+---
+
+## Structure de data.xlsx
+
+> **RÈGLE CRITIQUE** : Chaque ListObject **DOIT** être isolé dans sa propre feuille. Un ListObject par feuille, pas plus.
+
+| Feuille        | ListObject       | Rôle                                       |
+| -------------- | ---------------- | ------------------------------------------ |
+| ADV            | **tbADV**        | Utilisateurs et permissions                |
+| Configuration  | **tbParametres** | Paramètres de l'application                |
+| Mapping        | **tbMapping**    | Correspondance colonnes ERP / Suivi        |
+
+> **Note :** Les commentaires historiques ne sont plus stockés dans data.xlsx. Ils sont désormais contenus dans le fichier consolidé précédent (voir section "Structure du Fichier Consolidé" ci-dessous).
+
+### Détail des ListObjects
 
 **tbADV** : `UserName | Nom | Prénom | Trigramme | IsAdmin`
 
 **tbParametres** : `Parametre | Valeur | Description`
+
 - CheminData, CheminExtraction, CheminConsolidation
 - DelaiRetryMin (0), DelaiRetryMax (3), MaxTentatives (5)
 
 **tbMapping** : `ColonneExtraction | ColonneSuivi | Type | Description`
+
 - 16 colonnes mappées (Année, Mois, ADV, Affaire, CA prévu/réel, etc.)
+- RepertoireConsolide (répertoire par défaut du dialogue de sélection du fichier consolidé)
 
-**tbCommentaires** : `NumeroAffaire | TrigrammeADV | Commentaire | DateModification`
-- Historique centralisé des commentaires (remplace commentaires_2026.xlsx)
+---
 
-### Authentification
+## Structure du Fichier Consolidé
 
-- Identification : `Environ("USERNAME")` Windows
-- Vérification : Lookup dans tbADV
-- Permissions : AD restrictives (data\ uniquement)
+Le fichier consolidé joue un **double rôle** :
 
-### Gestion Concurrence
+1. **Livrable direction** : fichier de suivi hebdomadaire transmis à la direction (ex : `Suivi affaires 2026-S05.xlsx`)
+2. **Source de commentaires** : les commentaires saisis par les ADV sont stockés dans ce fichier et servent de source historique pour la semaine suivante
 
-- **UPSERT incrémental** : Suppression ancien ADV + ajout nouveau
-- **Retry** : Délai aléatoire 0-3s, max 5 tentatives
-- **Backup** : Avant chaque consolidation dans `data\backups\`
+### Structure du ListObject principal
 
-### Format Logging
+Le ListObject du fichier consolidé contient :
+- Toutes les colonnes définies dans tbMapping (ColonneSuivi)
+- Une colonne **Commentaire** (saisie ADV) qui contient les commentaires historiques
+
+### Comportement au premier lancement
+
+- Au premier lancement de l'année ou lors d'une première utilisation, l'ADV peut ne pas disposer d'un fichier consolidé précédent
+- Dans ce cas, la sélection du fichier consolidé est ignorée (clic Annuler) et les commentaires sont vides pour toutes les affaires
+
+### Validation du format
+
+- Si le fichier consolidé sélectionné est invalide (structure incorrecte, colonnes manquantes) → **ERR-103** avec option de continuer sans commentaires ou de choisir un autre fichier
+- La validation vérifie la présence du ListObject attendu et de la colonne Commentaire
+
+---
+
+## Authentification
+
+L'application identifie l'utilisateur sans écran de connexion :
+
+1. **Identification** : `Environ("USERNAME")` récupère le nom d'utilisateur Windows
+2. **Vérification** : Recherche dans tbADV pour valider que l'utilisateur est autorisé
+3. **Permissions** : Droits Active Directory restrictifs (répertoire `data/` uniquement)
+
+Si l'utilisateur n'est pas trouvé dans tbADV → ERR-001.
+
+---
+
+## Gestion de la Concurrence
+
+> **Contexte** : 3 ADV travaillent en parallèle sur un fichier partagé. Il n'y a pas de base de données, donc la concurrence est gérée au niveau du fichier Excel.
+
+- **UPSERT incrémental** : Suppression des anciennes lignes de l'ADV puis ajout des nouvelles
+- **Retry** : Si le fichier est verrouillé, l'application attend un délai aléatoire (0 à 3 secondes) puis réessaie, jusqu'à 5 tentatives maximum
+- **Backup** : Sauvegarde automatique avant chaque consolidation dans `data/backups/`
+
+---
+
+## Format de Logging
+
+Chaque action est tracée dans `tbAffaires.log` par `modLogging` :
 
 ```
 DATE | USER | ACTION | RESULTAT
@@ -128,265 +188,118 @@ DATE | USER | ACTION | RESULTAT
 
 ---
 
-## Implementation Patterns
+## Codes d'Erreur
 
-### Naming Conventions
+Chaque erreur a un code unique, un message explicite et des actions correctives pour l'utilisateur et l'admin.
 
-| Élément | Convention | Exemple |
-|---------|------------|---------|
-| Modules VBA | Préfixe `mod` | `modConfiguration` |
-| Fonctions VBA | PascalCase français (Verbe+Nom) | `ChargerDonneesExtraction()` |
-| Constantes VBA | SCREAMING_SNAKE_CASE | `MAX_TENTATIVES` |
-| Fichiers horodatés | AAAAMMDD_HHMMSS | `backup_20260123_143022.xlsx` |
+| Code    | Description                            | Action Utilisateur             | Action Admin                     |
+| ------- | -------------------------------------- | ------------------------------ | -------------------------------- |
+| ERR-001 | Utilisateur non configuré              | Contacter Patrick              | Ajouter à tbADV                  |
+| ERR-002 | Double admin détecté                   | Contacter Patrick              | Corriger tbADV                   |
+| ERR-101 | Colonne mapping manquante              | Vérifier fichier               | Mettre à jour tbMapping          |
+| ERR-102 | Fichier extraction introuvable         | Vérifier chemin                | Vérifier tbParametres            |
+| ERR-103 | Format fichier consolidé invalide      | Continuer sans commentaires ou choisir un autre fichier | Vérifier la structure du fichier |
+| ERR-201 | Fichier consolidation occupé           | Patienter/réessayer            | Vérifier qui a le fichier ouvert |
+| ERR-202 | Échec consolidation après 5 tentatives | Ne pas fermer, appeler Patrick | Vérifier verrou fichier          |
+| ERR-301 | Commentaire trop long                  | Raccourcir                     | -                                |
+| ERR-401 | Mode Admin actif                       | Vérifier trigramme             | Confirmer usurpation             |
 
-### Error Handling
+### Règles de Gestion des Erreurs
 
-- **Format message** : "Erreur + Solution"
-- **Centralisation** : Error handlers dans `modUtils`
-- **Exemple** : `"Colonne Trigramme non trouvée. Vérifiez le mapping dans data.xlsx."`
-
-### RAII Pattern (ApplicationState)
-
-```vba
-' Class_Initialize : Optimise (désactive ScreenUpdating, Calculation, Events)
-' Class_Terminate : Restaure état initial (même en crash)
-```
-
-### Error Handling Strategy
-
-**Principe : "Fail Fast, Fail Clear"**
-
-Toutes les erreurs suivent le même format :
-```
-[TYPE ERREUR] : [Description courte]
-[Explication contextuelle]
-[SOLUTION]
-[Contact]
-```
-
-**Codes d'Erreur Standardisés :**
-
-| Code | Description | Action Utilisateur | Action Admin |
-|------|-------------|-------------------|--------------|
-| ERR-001 | Utilisateur non configuré | Contacter Patrick | Ajouter à tbADV |
-| ERR-002 | Double admin détecté | Contacter Patrick | Corriger tbADV |
-| ERR-101 | Colonne mapping manquante | Vérifier fichier | Mettre à jour tbMapping |
-| ERR-102 | Fichier extraction introuvable | Vérifier chemin | Vérifier tbParametres |
-| ERR-201 | Fichier consolidation occupé | Patienter/réessayer | Vérifier qui a le fichier ouvert |
-| ERR-202 | Échec consolidation après 5 tentatives | Ne pas fermer, appeler Patrick | Vérifier verrou fichier |
-| ERR-301 | Commentaire trop long | Raccourcir | - |
-| ERR-401 | Mode Admin actif | Vérifier trigramme | Confirmer usurpation |
-
-**Règles de Gestion :**
-- Validation stricte du mapping avant chargement ERP (ERR-101)
-- Validation unicité Admin au démarrage (ERR-002)
+- Validation stricte du mapping **avant** chargement ERP (ERR-101)
+- Validation unicité Admin **au démarrage** (ERR-002)
 - Retry avec compteur visuel pour concurrence (ERR-201)
-- Préservation des données saisies en cas d'échec
+- Préservation des données saisies en cas d'échec (l'utilisateur ne perd jamais son travail)
 - Log systématique de toutes les erreurs
 
 ---
 
-## Project Structure
+## Flux de Données
+
+Ce schéma montre le parcours des données du démarrage à la fin de session :
 
 ```
-\\serveur-ad\FRV\AFFAIRES\01 SUIVI AFFAIRES\
-├── tbAffaires.xlsm                       # Application principale
-├── data\
-│   ├── data.xlsx                         # Config (tbADV, tbParametres, tbMapping, tbCommentaires)
-│   ├── consolidation.xltx                # Modèle de fichier pour la direction
-│   ├── backups｜                         # Sauvegardes horodatées (V2)
-│   └── tbAffaires.log                    # Fichier de logs
-├── extractions｜                          # Répertoire des fichiers ERP (paramétrable)
-├── Suivi affaires 2026-S04.xlsx          # Consolidation semaine 04
-├── ...                                   # Autres consolidations
-└── Suivi affaires 2026-S52.xlsx          # Consolidation semaine 52
-
-# Structure développement (hors production)
-├── Pipfile                      # Dépendances Python
-├── scripts/                     # Scripts Python (voir python-guidelines.md)
-│   ├── vba_toolkit/             # API Python pour développement VBA
-│   │   ├── __init__.py          # API publique
-│   │   ├── excel_manager.py     # RAII pour piloter Excel
-│   │   ├── vba_exporter.py      # Export VBA → fichiers
-│   │   ├── vba_importer.py      # Import fichiers → VBA
-│   │   ├── vba_sync.py          # Synchronisation bidirectionnelle
-│   │   ├── vba_validator.py     # Validation cohérence
-│   │   └── backup_manager.py    # Gestion des backups
-│   ├── export_vba_modules.py    # Script export manuel
-│   ├── import_vba_modules.py    # Script import manuel
-│   └── tests/                   # Tests unitaires
-└── src/                         # Code VBA source (Git-friendly)
-    ├── clsApplicationState.cls
-    ├── modUtils.bas
-    ├── modConfiguration.bas
-    ├── modLogging.bas
-    ├── modTimer.bas
-    ├── modExtraction.bas
-    ├── modFiltrage.bas
-    ├── modConsolidation.bas
-    └── modCommentaires.bas
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  data.xlsx   │     │ Consolidé    │     │ Extraction   │
+│  (config)    │     │ précédent    │     │ ERP          │
+│              │     │ (optionnel)  │     │              │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       ▼                    │                    │
+  1. modConfiguration       │                    │
+     lit tbADV,             │                    │
+     tbParametres,          │                    │
+     tbMapping              │                    │
+       │                    │                    │
+       ▼                    │                    │
+  2. Authentification       │                    │
+     USERNAME →             │                    │
+     vérif. tbADV           │                    │
+                            ▼                    │
+                       3. Dialogue 1             │
+                          modExtraction          │
+                          sélection consolidé    │
+                          (OPTIONNEL)            │
+                                                 ▼
+                                            4. Dialogue 2
+                                               modExtraction
+                                               sélection ERP
+                                               (OBLIGATOIRE)
+                                                 │
+                                                 ▼
+                                            5. modExtraction
+                                               charge ERP
+                                               (lecture seule,
+                                                validation mapping)
+                                                 │
+                            ┌────────────────────┘
+                            ▼
+                       6. modCommentaires
+                          extrait commentaires
+                          du consolidé (si fourni)
+                          + modFiltrage
+                          fusionne ERP + commentaires
+                          filtre par trigramme ADV
+                            │
+                            ▼
+                       7. L'ADV modifie
+                          le ListObject
+                          (Excel natif)
+                            │
+                            ▼                    ┌──────────────┐
+                       8. modConsolidation       │ Fichier de   │
+                          UPSERT (avec colonne   │ suivi partagé│
+                          Commentaire)           └──────┬───────┘
+                          + modLogging →                │
+                            tbAffaires.log              │
+                                                        ▼
 ```
 
-**Note:** Le code VBA est enregistré dans `src/` pour permettre le versioning Git et le refactoring. Le VBA Toolkit synchronise `src/` avec `tbAffaires.xlsm`.
+### Comparaison Ancien / Nouveau Workflow
 
-### Python Guidelines
-
-**Règles critiques** : Voir `project-context.md` (section Python)
-**Détails complets** : Voir `docs/knowledge-base/guidelines/python-guidelines.md`
-
-Contraintes clés :
-- `pipenv` obligatoire (pas `pip`)
-- `pywin32` obligatoire (pas `openpyxl`)
-- Scripts Python dans le répertoire `scripts/`
+| Étape | Ancien workflow | Nouveau workflow |
+| ----- | --------------- | ---------------- |
+| Configuration | modConfiguration lit tbADV, tbParametres, tbMapping, **tbCommentaires** | modConfiguration lit tbADV, tbParametres, tbMapping (sans tbCommentaires) |
+| Sélection fichiers | 1 dialogue : extraction ERP uniquement | 2 dialogues : consolidé précédent (optionnel) + extraction ERP |
+| Source commentaires | tbCommentaires dans data.xlsx | Colonne Commentaire du fichier consolidé précédent |
+| Consolidation | UPSERT + sauvegarde commentaires séparée | UPSERT avec colonne Commentaire incluse |
+| Nombre d'étapes | 9 | 8 |
 
 ---
 
-## Data Flow
+## Correspondance Exigences / Modules
 
-1. `modConfiguration` lit data.xlsx (tbADV, tbParametres, tbMapping, tbCommentaires)
-2. `Environ("USERNAME")` → vérification tbADV
-3. Boîte dialogue Windows → chargement extraction (lecture seule), s'ouvre sur le répertoire configuré dans tbParametres
-4. `modFiltrage` → ListObject temporaire filtré par trigramme
-5. `modCommentaires` → lecture commentaires historiques depuis tbCommentaires
-6. ADV modifie ListObject (Excel natif)
-7. `modConsolidation` → UPSERT dans fichier de suivi (racine du partage)
-8. `modCommentaires` → sauvegarde commentaires mis à jour dans tbCommentaires
-9. `modLogging` → append tbAffaires.log
-
----
-
-## VBA Development Workflow
-
-Le workflow de développement VBA utilise le VBA Toolkit pour synchroniser le code entre les fichiers source (`src/`) et le classeur Excel (`tbAffaires.xlsm`).
-
-### Structure VBA Source
-
-Le code VBA est enregistré dans `src/` sous forme de fichiers texte :
-
-```
-src/
-├── clsApplicationState.cls   # Classe RAII (préfixe cls pour les classes)
-├── modUtils.bas              # Helpers, constantes, gestion erreurs
-├── modConfiguration.bas      # Chargement configuration
-├── modLogging.bas            # Logging
-├── modTimer.bas              # Mesure performance
-├── modExtraction.bas         # Import ERP
-├── modFiltrage.bas           # Filtrage ADV
-├── modConsolidation.bas      # UPSERT + retry
-└── modCommentaires.bas       # Gestion historique commentaires
-```
-
-### Workflow Développeur
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     DÉVELOPPEMENT VBA                        │
-└─────────────────────────────────────────────────────────────┘
-
-1. ÉDITION DU CODE
-   ├── Éditer fichiers dans src/ (IDE texte, Git...)
-   ├── Refactoriser, formater, documenter
-   └── Git commit/pull/push (manuel)
-
-2. IMPORT DANS EXCEL
-   ├── Script: python scripts/import_vba_modules.py
-   ├── VBA Toolkit: VBAImporter.import_all("src/")
-   ├── Backup automatique avant import
-   └── tbAffaires.xlsm mis à jour
-
-3. TESTS DANS EXCEL
-   ├── Ouvrir tbAffaires.xlsm
-   ├── Tester fonctionnalités (manuels ou automatisés)
-   └── Debug VBA si nécessaire
-
-4. [Optionnel] EXPORT POUR SAUVEGARDER
-   ├── Script: python scripts/export_vba_modules.py
-   └── VBA Toolkit: VBAExporter.export_all("src/")
-```
-
-### API VBA Toolkit
-
-```python
-from vba_toolkit import VBAExporter, VBAImporter, VBASync
-
-# Exporter tous les modules VBA du classeur
-with VBAExporter("tbAffaires.xlsm") as exporter:
-    modules = exporter.export_all("src/")
-    print(f"{len(modules)} modules exportés")
-
-# Importer les modules depuis src/ vers classeur
-with VBAImporter("tbAffaires.xlsm") as importer:
-    importer.import_all("src/")
-    print("Modules importés avec succès")
-
-# Synchroniser bidirectionnellement
-with VBASync("tbAffaires.xlsm", "src/") as sync:
-    report = sync.compare()
-    if report.has_conflicts:
-        sync.resolve_conflicts()
-    sync.apply_changes()
-```
-
-### Avantages du VBA Toolkit
-
-| Avantage | Description |
-|----------|-------------|
-| **Versioning Git** | Code VBA versionnable dans src/ |
-| **Refactoring** | Refactoriser dans IDE texte moderne |
-| **Travail équipe** | Git merge/pull sur fichiers VBA |
-| **Backup auto** | Snapshots avant chaque import |
-| **Productivité** | Import/Export rapide et fiable |
-| **Validation** | Vérification cohérence automatique |
-
-### Scénarios d'Utilisation
-
-**Scénario 1: Nouvelle fonctionnalité**
-```python
-# 1. Éditer src/modExtraction.bas (nouvelle fonction)
-# 2. Git commit
-# 3. Importer pour tester
-from vba_toolkit import VBAImporter
-with VBAImporter("tbAffaires.xlsm") as importer:
-    importer.import_module("src/modExtraction.bas")
-```
-
-**Scénario 2: Résolution de conflits Git**
-```python
-# 1. Git merge sur src/modUtils.bas
-# 2. Résoudre conflits dans IDE
-# 3. Importer version résolue
-from vba_toolkit import VBAImporter
-with VBAImporter("tbAffaires.xlsm") as importer:
-    importer.import_module("src/modUtils.bas")
-```
-
-**Scénario 3: Comparaison versions**
-```python
-# Comparer classeur vs src/
-from vba_toolkit import VBASync
-with VBASync("tbAffaires.xlsm", "src/") as sync:
-    report = sync.compare()
-    for diff in report.differences:
-        print(f"{diff.module}: {diff.status}")
-```
-
-**Référence:** Voir ADR-005 pour les détails complets du VBA Toolkit
-
----
-
-## Requirements Mapping (FR → Modules)
-
-| Catégorie | FR | Modules |
-|-----------|-----|---------|
-| Session | FR1-FR5 | clsApplicationState, modConfiguration, modUtils |
-| Données | FR6-FR11 | modExtraction, modConfiguration |
-| Filtrage | FR12-FR16 | modFiltrage |
-| Saisie | FR17-FR19 | (Excel natif) |
-| Consolidation | FR20-FR24 | modConsolidation, modUtils, modTimer |
-| Timer | FR25-FR27 | modTimer |
-| Logging | FR28-FR31 | modLogging |
-| Config | FR32-FR34 | modConfiguration (via data.xlsx) |
-| Commentaires | FR9, FR15 | modCommentaires (tbCommentaires dans data.xlsx) |
+| Catégorie     | Exigences | Modules impliqués                               |
+| ------------- | --------- | ----------------------------------------------- |
+| Session       | FR1-FR5   | clsApplicationState, modConfiguration, modUtils |
+| Données       | FR6-FR11  | modExtraction (2 dialogues), modConfiguration   |
+| Filtrage      | FR12-FR16 | modFiltrage                                     |
+| Saisie        | FR17-FR19 | (Excel natif, pas de module VBA dédié)          |
+| Consolidation | FR20-FR24 | modConsolidation, modUtils, modTimer            |
+| Timer         | FR25-FR27 | modTimer                                        |
+| Logging       | FR28-FR31 | modLogging                                      |
+| Config        | FR32-FR34 | modConfiguration (via data.xlsx)                |
+| Commentaires  | FR9, FR15 | modCommentaires (fichier consolidé précédent)   |
 
 ---
 
@@ -394,60 +307,16 @@ with VBASync("tbAffaires.xlsm", "src/") as sync:
 
 ### Guides Utilisateurs
 
-| Document | Public | Contenu |
-|----------|--------|---------|
-| `docs/guide-utilisateur.md` | ADV (3 utilisateurs) | Procédure 5 étapes, problèmes courants, mode admin |
-| `docs/guide-administrateur.md` | Patrick (Admin) | Configuration data.xlsx, points de vigilance, procédures d'urgence |
-| `docs/points-vigilance-et-erreurs.md` | Dev + Admin | Matrice des risques, codes erreur, stratégie de gestion d'erreurs |
+| Document                              | Public               | Contenu                                                            |
+| ------------------------------------- | -------------------- | ------------------------------------------------------------------ |
+| `docs/guide-utilisateur.md`           | ADV (3 utilisateurs) | Procédure 5 étapes, problèmes courants, mode admin                 |
+| `docs/guide-administrateur.md`        | Patrick (Admin)      | Configuration data.xlsx, points de vigilance, procédures d'urgence |
+| `docs/points-vigilance-et-erreurs.md` | Dev + Admin          | Matrice des risques, codes erreur, stratégie de gestion d'erreurs  |
 
 ### Documentation Technique
 
-| Document | Contenu |
-|----------|---------|
+| Document                                           | Contenu                                                   |
+| -------------------------------------------------- | --------------------------------------------------------- |
 | `docs/knowledge-base/guidelines/vba-guidelines.md` | Conventions de code VBA (Windows-1252, naming, structure) |
-| `docs/knowledge-base/decisions/001-vba-toolkit.md` | Architecture du VBA Toolkit (post-développement) |
-| `project-context.md` (racine) | Règles d'implémentation pour SM et Dev |
-
----
-
-## Development Sequence
-
-### Phase 1: Infrastructure (Étape 0)
-
-1. Structure fichiers (tbAffaires.xlsm + data.xlsx + src/)
-2. **VBA Toolkit** (scripts/vba_toolkit/) - *V2*
-   - ExcelManager (RAII pour Excel)
-   - VBAExporter, VBAImporter, VBASync, VBAValidator
-   - BackupManager (sauvegardes horodatées)
-   - Scripts utilitaires (import/export)
-   - Tests unitaires
-3. **Configuration Git** (.gitignore pour *.xlsm, src/ inclus)
-
-### Phase 2: Modules VBA (Étapes 1-9)
-
-4. clsApplicationState (RAII - Classe)
-5. modUtils (fondation)
-6. modConfiguration
-7. modLogging
-8. modTimer
-9. modExtraction
-10. modFiltrage
-11. modConsolidation
-12. modCommentaires (gestion historique commentaires)
-
-**Note:** Chaque module est développé dans `src/` puis importé dans `tbAffaires.xlsm` via VBA Toolkit.
-
-### Phase 3: Tests & Documentation (Étapes 10-12)
-
-13. Tests manuels (5 scénarios)
-14. Documentation (guide utilisateur, gestionnaire, FAQ)
-15. Documentation développeur (VBA Toolkit usage)
-
-### Phase 4: Déploiement (Étape 13)
-
-16. Déploiement serveur AD
-
-**Workflow cyclique:**
-```
-Éditer src/ → Git commit → Import Excel → Tester → [Modifier src/] → Répéter
-```
+| `docs/knowledge-base/decisions/001-vba-toolkit.md` | Architecture du VBA Toolkit (post-développement)          |
+| `project-context.md` (racine)                      | Règles d'implémentation pour SM et Dev                    |

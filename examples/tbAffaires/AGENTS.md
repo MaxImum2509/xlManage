@@ -2,7 +2,7 @@
 
 ## Project overview
 
-`tbAffaires` est une application VBA/Excel sur Active Directory pour reporting hebdomadaire (3 ADV, ~2500 affaires). Travail parallèle (plages exclusives), commentaires historiques auto (data.xlsx), UPSERT incrémental + retry. xlManage pour dev VBA: sync src/ ↔ tbAffaires.xlsm, data.xlsx, tests.
+`tbAffaires` est une application VBA/Excel sur Active Directory pour reporting hebdomadaire (3 ADV, ~2500 affaires). Travail parallèle (plages exclusives), commentaires historiques depuis fichier consolidé précédent, UPSERT incrémental + retry. xlManage pour dev VBA: sync src/ ↔ tbAffaires.xlsm, data.xlsx, tests.
 
 ## Arborescence
 
@@ -15,7 +15,7 @@
 
 ## Langues
 
-- Documentation : Français
+- Documentation et discucssions : Français
 - VBA : Nommage code Français PascalCase / Commentaires : Français
 - Python : Anglais
 - Shell scripts : Anglais
@@ -24,9 +24,9 @@
 
 - ID: Environ("USERNAME") → tbADV
 - RAII: clsApplicationState
-- ERP load (dialog, read-only)
+- Double dialogue : fichier consolidé (opt.) + ERP (requis)
 - Filtre ADV ListObject
-- Commentaires auto
+- Commentaires depuis fichier consolidé
 - UPSERT retry 5x
 - Log: DATE|USER|ACTION|RESULTAT
 - Admin mode

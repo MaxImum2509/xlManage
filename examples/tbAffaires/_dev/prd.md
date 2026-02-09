@@ -49,7 +49,7 @@ Une macro VBA sur serveur Active Directory permettant :
 - **Travail parallèle** (1 affaire = 1 ADV = pas de conflit)
 - **Récupération automatique** des commentaires historiques
 - **Consolidation incrémentale** (UPSERT) avec gestion des conflits
-- **Format conforme** au consolidation.xltx de la direction
+- **Format conforme** au modèle.xltx de la direction
 
 ### Différenciateur
 
@@ -118,7 +118,7 @@ Architecture **data-driven** : tout est configurable sans toucher au code (mappi
 - Identification automatique utilisateur (username système)
 - Mode Admin pour usurpation d'utilisateur (V1)
 - Filtrage automatique par trigramme ADV
-- Récupération commentaires depuis fichier historique `commentaires_2026.xlsx`
+- Récupération commentaires depuis le fichier consolidé de la semaine précédente (optionnel au premier lancement)
 - Saisie dans ListObject (colonne Commentaire déverrouillée, reste verrouillé)
 - Mise en évidence affaires en difficulté (résultat financier critique)
 - Consolidation incrémentale UPSERT avec retry (0-3s, 5 tentatives)
@@ -160,9 +160,9 @@ Architecture **data-driven** : tout est configurable sans toucher au code (mappi
 **Déroulement :**
 
 1. Double-clic sur `tbAffaires.xlsm` → identification automatique (username → trigramme VC)
-2. Sélection fichier extraction via boîte de dialogue → chargement < 5s
+2. Sélection du fichier consolidé précédent (optionnel, clic Annuler si première semaine), puis sélection du fichier d'extraction ERP via boîte de dialogue → chargement < 5s
 3. Affichage ListObject filtré sur SES affaires uniquement (classeur verrouillé sauf colonne Commentaire)
-4. Affaires en difficulté en rouge, commentaires historiques pré-remplis depuis `commentaires_2026.xlsx`
+4. Affaires en difficulté en rouge, commentaires historiques pré-remplis depuis le fichier consolidé de S-1
 5. Saisie des nouveaux commentaires dans la colonne déverrouillée
 6. Clic "Consolider" → **"Consolidation réussie"**
 7. Notification orale à l'assistant projet → départ week-end
@@ -245,15 +245,14 @@ Architecture **data-driven** : tout est configurable sans toucher au code (mappi
 ├── tbAffaires.xlsm                       # Application
 └── data\
 |   ├── data.xlsx                         # Config (tbADV, tbParametres, tbMapping)
-|   ├── commentaires_2026.xlsx             # Historique centralisé des commentaires
-|   ├── consolidation.xltx                # Modèle de fichier de consolidation à transmettre à la direction
+|   ├── modèle.xltx                       # Modèle de fichier de consolidation à transmettre à la direction
 |   └── tbAffaires.log                    # Fichier de logs
 └── extractions\                          # Répertoires où se trouvent les fichiers d'extraction de l'ERP
 |   ├── extraction1.xlsx
 |   ├── extraction2.xlsx
 |   ├── ...
 |   └── extractionN.xlsx
-|── Suivi affaires 2026-S04.xlsx          # Consolidation 2026 semaine 04
+|── Suivi affaires 2026-S04.xlsx          # Consolidation 2026 semaine 04 (contient les commentaires)
 |── ...                                   # Ensemble des consolidations de l'année
 └── Suivi affaires 2026-S52.xlsx          # Consolidation 2026 semaine 52
 ```
@@ -264,7 +263,7 @@ Architecture **data-driven** : tout est configurable sans toucher au code (mappi
 | ----------------- | ------------------------ | -------------------------- |
 | Username Windows  | `Environ("USERNAME")`    | Identification automatique |
 | Fichiers réseau   | Chemins UNC `\\serveur\` | Data, commentaires, logs   |
-| Sélection fichier | `GetOpenFilename`        | Choix extraction ERP       |
+| Sélection fichier | `GetOpenFilename`        | Choix fichier consolidé (opt.) + extraction ERP |
 
 ### Stratégie de Déploiement
 
@@ -287,10 +286,10 @@ Architecture **data-driven** : tout est configurable sans toucher au code (mappi
 
 ### Chargement des Données (FR6-FR11)
 
-- **FR6:** L'ADV sélectionne le fichier d'extraction ERP via boîte de dialogue Windows
+- **FR6:** L'ADV sélectionne d'abord le fichier consolidé précédent (optionnel), puis le fichier d'extraction ERP via boîte de dialogue Windows
 - **FR7:** L'application charge le fichier d'extraction en lecture seule
 - **FR8:** L'application charge le mapping des colonnes depuis data.xlsx (tbMapping)
-- **FR9:** L'application charge les commentaires historiques depuis `commentaires_2026.xlsx`
+- **FR9:** L'application charge les commentaires historiques depuis le fichier consolidé de la semaine précédente (colonne Commentaire)
 - **FR10:** L'application crée automatiquement le fichier de suivi s'il n'existe pas
 - **FR11:** L'application affiche un message d'erreur si colonne mappée introuvable
 
@@ -417,7 +416,7 @@ Architecture **data-driven** : tout est configurable sans toucher au code (mappi
 Les scripts Python sont utilisés **UNIQUEMENT durant la phase de développement** pour automatiser :
 
 1. **Création de fichiers Excel**
-   - Génération de fichiers `data.xlsx` avec les ListObjects tbADV, tbParametres, tbMapping
+   - Génération de fichiers `data.xlsx` avec les ListObjects tbADV, tbParametres, tbMapping (3 feuilles)
    - Mise à jour automatique des structures de tables et des données dans les fichiers excel
 
 2. **Gestion des modules VBA**
@@ -537,7 +536,7 @@ if __name__ == "__main__":
 ### Documents Liés
 
 - Product Brief : `product-brief-tbAffaires-2026-01-23.md`
-- Modèle direction : `consolidation.xltx` (à obtenir)
+- Modèle direction : `modèle.xltx` (à obtenir)
 
 ---
 
