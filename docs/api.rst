@@ -1,35 +1,104 @@
 API Reference
 =============
 
-xlmanage Package
-----------------
+This section documents the internal Python API of xlManage.
+All modules are auto-documented from their source docstrings.
 
-.. automodule:: xlmanage
+Core Modules
+------------
+
+ExcelManager
+^^^^^^^^^^^^
+
+.. automodule:: xlmanage.excel_manager
    :members:
    :undoc-members:
    :show-inheritance:
 
-CLI Module
-----------
+WorkbookManager
+^^^^^^^^^^^^^^^
 
-.. automodule:: xlmanage.cli
+.. automodule:: xlmanage.workbook_manager
    :members:
    :undoc-members:
    :show-inheritance:
 
-Available Modules
------------------
+WorksheetManager
+^^^^^^^^^^^^^^^^
 
-The following modules are currently available in xlmanage:
+.. automodule:: xlmanage.worksheet_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
-* :py:mod:`xlmanage` - Main package
-* :py:mod:`xlmanage.cli` - Command Line Interface
+TableManager
+^^^^^^^^^^^^
 
-Future Modules (Planned)
-------------------------
+.. automodule:: xlmanage.table_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
-The following modules are planned for future development:
+VBA Modules
+-----------
 
-* ``xlmanage.excel_manager`` - Core Excel management functionality
-* ``xlmanage.utils`` - Utility functions
-* ``xlmanage.exceptions`` - Custom exceptions
+VBAManager
+^^^^^^^^^^
+
+.. automodule:: xlmanage.vba_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+MacroRunner
+^^^^^^^^^^^
+
+.. automodule:: xlmanage.macro_runner
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Optimization Modules
+--------------------
+
+ExcelOptimizer
+^^^^^^^^^^^^^^
+
+.. automodule:: xlmanage.excel_optimizer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+ScreenOptimizer
+^^^^^^^^^^^^^^^
+
+.. automodule:: xlmanage.screen_optimizer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+CalculationOptimizer
+^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: xlmanage.calculation_optimizer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Other Modules
+-------------
+
+Exceptions
+^^^^^^^^^^
+
+.. automodule:: xlmanage.exceptions
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+CLI
+^^^
+
+The CLI module is built with `Typer <https://typer.tiangolo.com/>`_ and is
+documented in the :doc:`usage` guide.  Run ``xlmanage --help`` for the
+complete list of commands and options.

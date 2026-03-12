@@ -4,30 +4,43 @@ Introduction
 About xlManage
 --------------
 
-xlManage is a powerful CLI (Command Line Interface) tool designed for Excel automation
-using COM (Component Object Model) technology. It provides developers and power users
-with a robust interface to control and manage Excel workbooks, worksheets, and data
-through command-line operations.
+xlManage is a CLI utility implemented in Python that controls Microsoft Excel
+via COM automation (``pywin32``).  It is designed to be driven by an LLM agent
+or by shell scripts, offering full programmatic control over Excel instances,
+workbooks, worksheets, tables, VBA modules, and macro execution.
 
 Key Features
 ------------
 
-* **COM Automation**: Direct control over Excel via COM interface
-* **CLI Interface**: Easy-to-use command line commands
-* **Cross-platform**: Works on Windows systems with Excel installed
-* **Extensible**: Modular design for easy extension
-* **Well-documented**: Comprehensive API documentation
+* **Excel instance control** -- start, stop, show/hide, and query running
+  Excel processes.
+* **Workbook management** -- open, create, save, close and list workbooks
+  with options such as read-only and dev mode (``--dev`` disables
+  ``Workbook_Open`` events).
+* **Worksheet management** -- create, delete, copy, and list worksheets.
+* **Table (ListObject) management** -- create, delete, and list Excel tables.
+* **VBA module management** -- import/export standard modules (``.bas``),
+  class modules (``.cls``), UserForms (``.frm/.frx``), and document modules
+  (ThisWorkbook, Sheet).  Automatic encoding conversion from UTF-8 to
+  Windows-1252 with CRLF normalization.
+* **Macro execution** -- run VBA Sub and Function procedures with typed
+  argument passing and configurable timeout.
+* **Performance optimization** -- toggle screen updating, calculation mode
+  and force recalculation.
+* **Robust COM handling** -- automatic ``gen_py`` cache recovery, graceful
+  disconnect without killing Excel, and ``Visibility`` enum to avoid
+  side-effects on existing instances.
 
 Use Cases
 ---------
 
 xlManage is ideal for:
 
-* Automating repetitive Excel tasks
-* Batch processing of Excel files
-* Integrating Excel operations into scripts and workflows
-* Managing large datasets in Excel
-* Generating reports and analyses
+* Allowing an LLM agent to interact with Excel in real time
+* Automating repetitive Excel and VBA tasks from the command line
+* Importing/exporting VBA projects for version control
+* Running macros in CI or automated workflows
+* Managing large Excel datasets via scripts
 
 Project Structure
 -----------------
@@ -37,17 +50,23 @@ Project Structure
    xlmanage/
    ├── src/
    │   └── xlmanage/
-   │       ├── __init__.py
-   │       ├── cli.py
-   │       ├── excel_manager.py
-   │       └── ...
+   │       ├── cli.py                  # Typer CLI entry point
+   │       ├── excel_manager.py        # Excel instance lifecycle
+   │       ├── workbook_manager.py     # Workbook CRUD
+   │       ├── worksheet_manager.py    # Worksheet CRUD
+   │       ├── table_manager.py        # Table (ListObject) CRUD
+   │       ├── vba_manager.py          # VBA module import/export
+   │       ├── macro_runner.py         # Macro execution
+   │       ├── excel_optimizer.py      # Combined optimizer
+   │       ├── screen_optimizer.py     # Screen updating optimizer
+   │       ├── calculation_optimizer.py # Calculation mode optimizer
+   │       └── exceptions.py           # Custom exception hierarchy
    ├── tests/
    ├── docs/
-   ├── examples/
    └── pyproject.toml
 
 Getting Started
 ---------------
 
-To get started with xlManage, see the :doc:`installation` guide and then explore
-the :doc:`usage` examples.
+To get started with xlManage, see the :doc:`installation` guide and then
+explore the :doc:`usage` examples.

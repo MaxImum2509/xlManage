@@ -12,7 +12,7 @@ Before installing xlManage, ensure you have the following:
 * **Poetry** - For dependency management (recommended)
 
 Installation Methods
--------------------
+--------------------
 
 Using Poetry (Recommended)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

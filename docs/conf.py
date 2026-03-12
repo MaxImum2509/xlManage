@@ -81,13 +81,14 @@ html_theme_options = {
 # -- Options for autodoc ----------------------------------------------------
 
 # Automatically extract type hints when specified
-autodoc_typehints = "description"
+autodoc_typehints = "signature"
 
 # Don't show class signature with the class' docstring
 autoclass_content = "class"
 
 # Order of members in API documentation
 autodoc_member_order = "groupwise"
+
 
 
 # -- Options for Napoleon (Google/NumPy style docstrings) -------------------
