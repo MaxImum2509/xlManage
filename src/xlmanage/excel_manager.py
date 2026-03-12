@@ -21,6 +21,7 @@ import gc
 import logging
 import re
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 try:
@@ -38,12 +39,45 @@ except ImportError:
 # Import subprocess for process management
 import ctypes
 import ctypes.wintypes
+import shutil
 import subprocess
 
 from .exceptions import ExcelConnectionError, ExcelInstanceNotFoundError, ExcelRPCError
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+
+def _purge_gen_py_cache() -> None:
+    """Purge the pywin32 gen_py COM type cache.
+
+    The gen_py cache stores auto-generated Python wrappers for COM type
+    libraries.  It can become corrupted after Office updates or version
+    changes, producing ``AttributeError: ... has no attribute
+    'CLSIDToClassMap'``.  Deleting the cache forces pywin32 to regenerate
+    it on the next ``Dispatch()`` call.
+    """
+    try:
+        gen_path: str = win32com.__gen_path__
+        if gen_path:
+            shutil.rmtree(gen_path, ignore_errors=True)
+            logger.info("Purged gen_py cache at %s", gen_path)
+    except Exception:
+        # Best-effort: if we cannot locate / delete the cache, move on.
+        pass
+
+
+class Visibility(Enum):
+    """Visibility state requested for an Excel instance.
+
+    SHOW: Make the instance visible.
+    HIDE: Make the instance invisible.
+    UNCHANGED: Preserve the current visibility state.
+    """
+
+    SHOW = "show"
+    HIDE = "hide"
+    UNCHANGED = "unchanged"
 
 
 @dataclass
@@ -70,24 +104,44 @@ class ExcelManager:
     Never call app.Quit() - use the stop() protocol instead.
     """
 
-    def __init__(self, visible: bool = False):
+    def __init__(
+        self,
+        visibility: Visibility = Visibility.UNCHANGED,
+        *,
+        visible: bool | None = None,
+    ):
         """Initialize Excel manager.
 
         Args:
-            visible: If True, the Excel instance will be visible on screen.
-                     Default False (automated mode).
+            visibility: Visibility state to apply on start.
+                        Visibility.SHOW      - make Excel visible.
+                        Visibility.HIDE      - make Excel invisible.
+                        Visibility.UNCHANGED - preserve current state (default).
+            visible: **Deprecated** -- legacy shorthand kept for backward
+                     compatibility with the CLI and helper scripts.
+                     ``True`` maps to ``Visibility.SHOW``,
+                     ``False`` maps to ``Visibility.UNCHANGED`` (do not
+                     hide an already-visible instance).
+                     When provided, *visible* takes precedence over *visibility*.
         """
+        if visible is not None:
+            visibility = Visibility.SHOW if visible else Visibility.UNCHANGED
         self._app: CDispatch | None = None
-        self._visible: bool = visible
+        self._visibility: Visibility = visibility
 
-    def __enter__(self) -> "ExcelManager":
+    def __enter__(self) -> ExcelManager:
         """Enter context manager - start Excel instance."""
         self.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit context manager - stop Excel instance."""
-        self.stop()
+        """Exit context manager - release COM reference without side effects.
+
+        Uses disconnect() so that workbooks remain open and the Excel
+        process keeps running.  Call stop() explicitly when you need to
+        close workbooks.
+        """
+        self.disconnect()
 
     @property
     def app(self) -> CDispatch:
@@ -108,9 +162,13 @@ class ExcelManager:
     def start(self, new: bool = False) -> InstanceInfo:
         """Start or connect to an Excel instance.
 
+        Both new=True and new=False use win32.Dispatch() via the ROT so that
+        the instance remains accessible to subsequent scripts.  The `new`
+        parameter is kept for API compatibility but no longer creates an
+        isolated DispatchEx process.
+
         Args:
-            new: If False, win32.Dispatch() reuses an instance via ROT.
-                 If True, win32.DispatchEx() creates an isolated process.
+            new: Ignored - kept for API compatibility. Always uses Dispatch().
 
         Returns:
             InstanceInfo with information about the connected instance.
@@ -119,15 +177,24 @@ class ExcelManager:
             ExcelConnectionError: If Excel is not installed or COM is unavailable.
         """
         try:
-            if new:
-                # Create a new isolated Excel instance
-                self._app = win32com.client.DispatchEx("Excel.Application")
-            else:
-                # Reuse existing instance via Running Object Table (ROT)
-                self._app = win32com.client.Dispatch("Excel.Application")
+            # Always use Dispatch() so the instance is registered in the ROT
+            # and reconnectable from any subsequent script.
+            self._app = self._dispatch_with_cache_retry()
 
-            # Set visibility
-            self._app.Visible = self._visible
+            # Apply visibility only if explicitly requested
+            if self._visibility == Visibility.SHOW:
+                try:
+                    self._app.Visible = True
+                except AttributeError:
+                    # Ignore if property cannot be set (Excel in certain states)
+                    pass
+            elif self._visibility == Visibility.HIDE:
+                try:
+                    self._app.Visible = False
+                except AttributeError:
+                    # Ignore if property cannot be set
+                    pass
+            # Visibility.UNCHANGED : do not touch app.Visible
 
             # Get instance information
             return self.get_instance_info(self._app)
@@ -143,6 +210,28 @@ class ExcelManager:
                     0x80080005, f"Failed to start Excel: {str(e)}"
                 ) from e
 
+    @staticmethod
+    def _dispatch_with_cache_retry() -> CDispatch:
+        """Dispatch Excel.Application with automatic gen_py cache recovery.
+
+        The pywin32 gen_py cache can become corrupted (stale CLSIDToClassMap).
+        When this happens, purge the cache directory and retry once.
+
+        Returns:
+            CDispatch: Excel Application COM object.
+
+        Raises:
+            AttributeError: If retry also fails after cache purge.
+        """
+        try:
+            return win32com.client.Dispatch("Excel.Application")
+        except AttributeError as exc:
+            if "CLSIDToClassMap" not in str(exc):
+                raise
+            logger.warning("Corrupted gen_py cache detected, purging and retrying...")
+            _purge_gen_py_cache()
+            return win32com.client.Dispatch("Excel.Application")
+
     def get_instance_info(self, app: CDispatch) -> InstanceInfo:
         """Get information about an Excel instance.
 
@@ -153,8 +242,14 @@ class ExcelManager:
             InstanceInfo with the instance details.
         """
         # Get basic information
-        visible = app.Visible
-        workbooks_count = app.Workbooks.Count
+        try:
+            visible = app.Visible
+        except AttributeError:
+            visible = False  # Assume invisible if property not available
+        try:
+            workbooks_count = app.Workbooks.Count
+        except AttributeError:
+            workbooks_count = 0  # Assume no workbooks if property not available
 
         # Get HWND (window handle) and PID
         # This requires ctypes for Windows API calls
@@ -180,6 +275,21 @@ class ExcelManager:
             return InstanceInfo(
                 pid=-1, visible=visible, workbooks_count=workbooks_count, hwnd=-1
             )
+
+    def disconnect(self) -> None:
+        """Release the COM reference without closing workbooks or Excel.
+
+        Use this when you want to detach from a running Excel instance
+        while leaving everything intact (workbooks open, process alive).
+        This is the default behaviour of ``__exit__`` so that CLI
+        commands and short-lived scripts do not disrupt the user's
+        session.
+
+        Unlike ``stop()``, this method does **not** call ``gc.collect()``
+        because forcing garbage collection would destroy the only COM
+        reference and may cause the Excel process to terminate.
+        """
+        self._app = None
 
     def stop(self, save: bool = True) -> None:
         """Stop the managed Excel instance properly.

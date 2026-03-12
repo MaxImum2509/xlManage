@@ -165,7 +165,12 @@ class WorkbookManager:
         """
         self._mgr = excel_manager
 
-    def open(self, path: Path, read_only: bool = False) -> WorkbookInfo:
+    def open(
+        self,
+        path: Path,
+        read_only: bool = False,
+        disable_events: bool = False,
+    ) -> WorkbookInfo:
         """Open an existing workbook.
 
         Opens a workbook file and returns information about it.
@@ -174,6 +179,10 @@ class WorkbookManager:
         Args:
             path: Path to the Excel file to open
             read_only: If True, open in read-only mode (default: False)
+            disable_events: If True, set ``Application.EnableEvents = False``
+                before opening the workbook and leave it disabled.  This
+                prevents ``Workbook_Open`` and other event handlers from
+                firing -- useful for development and automation workflows.
 
         Returns:
             WorkbookInfo with details about the opened workbook
@@ -187,6 +196,9 @@ class WorkbookManager:
             >>> manager = WorkbookManager(excel_mgr)
             >>> info = manager.open(Path("C:/data/sales.xlsx"), read_only=True)
             >>> print(f"Opened {info.name} with {info.sheets_count} sheets")
+
+            >>> # Dev mode: open without triggering Workbook_Open
+            >>> info = manager.open(Path("macro.xlsm"), disable_events=True)
         """
         # Step 1: Verify file exists
         if not path.exists():
@@ -202,7 +214,11 @@ class WorkbookManager:
                 f"Workbook is already open: {existing_wb.Name}",
             )
 
-        # Step 3: Open the workbook
+        # Step 3: Disable events if requested (dev mode)
+        if disable_events:
+            app.EnableEvents = False
+
+        # Step 4: Open the workbook
         try:
             # Convert Path to string and resolve to absolute path
             abs_path = str(path.resolve())

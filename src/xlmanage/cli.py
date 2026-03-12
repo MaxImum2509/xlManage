@@ -26,7 +26,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 try:
-    from .excel_manager import ExcelManager, InstanceInfo
+    from .excel_manager import ExcelManager, InstanceInfo, Visibility
     from .exceptions import (
         ExcelConnectionError,
         ExcelInstanceNotFoundError,
@@ -57,7 +57,7 @@ try:
     from .workbook_manager import WorkbookManager
     from .worksheet_manager import WorksheetManager
 except ImportError:
-    from xlmanage.excel_manager import ExcelManager
+    from xlmanage.excel_manager import ExcelManager, Visibility
     from xlmanage.exceptions import (
         ExcelConnectionError,
         ExcelInstanceNotFoundError,
@@ -798,6 +798,20 @@ def _force_calculate(app_com, console_obj: Console) -> None:
         raise typer.Exit(code=1)
 
 
+def _resolve_visibility(visible: bool, hidden: bool) -> Visibility:
+    """Resolve --visible/--hidden flags to a Visibility enum value."""
+    if visible and hidden:
+        console.print(
+            "[red]Erreur :[/red] --visible et --hidden sont mutuellement exclusifs"
+        )
+        raise typer.Exit(code=1)
+    if hidden:
+        return Visibility.HIDE
+    if visible:
+        return Visibility.SHOW
+    return Visibility.UNCHANGED
+
+
 workbook_app = typer.Typer(help="Manage Excel workbooks")
 app.add_typer(workbook_app, name="workbook")
 
@@ -811,28 +825,44 @@ def workbook_open(
         "-r",
         help="Open in read-only mode",
     ),
+    dev: bool = typer.Option(
+        False,
+        "--dev",
+        help="Mode dev : desactive les evenements (Workbook_Open, etc.)",
+    ),
+    visible: bool = typer.Option(
+        False, "--visible", help="Rendre Excel visible (defaut)"
+    ),
+    hidden: bool = typer.Option(False, "--hidden", help="Masquer la fenetre Excel"),
 ):
     """Open an existing workbook.
 
     Opens a workbook file in the active Excel instance.
     The file must exist on disk.
+
+    Use --dev to disable events before opening (prevents Workbook_Open
+    from firing).  Useful during development and test workflows.
     """
     try:
-        with ExcelManager() as excel_mgr:
+        with ExcelManager(visibility=_resolve_visibility(visible, hidden)) as excel_mgr:
             wb_mgr = WorkbookManager(excel_mgr)
-            info = wb_mgr.open(path, read_only=read_only)
+            info = wb_mgr.open(path, read_only=read_only, disable_events=dev)
 
-            mode = "lecture seule" if info.read_only else "lecture/écriture"
-            saved_status = "sauvegardé" if info.saved else "non sauvegardé"
+            mode = "lecture seule" if info.read_only else "lecture/ecriture"
+            saved_status = "sauvegarde" if info.saved else "non sauvegarde"
+            dev_notice = (
+                "\n[yellow][mode dev] Events desactives[/yellow]" if dev else ""
+            )
 
             console.print(
                 Panel.fit(
-                    f"[green]OK[/green] Classeur ouvert avec succès\n\n"
+                    f"[green]OK[/green] Classeur ouvert avec succes\n\n"
                     f"[bold]Nom :[/bold] {info.name}\n"
                     f"[bold]Chemin :[/bold] {info.full_path}\n"
                     f"[bold]Mode :[/bold] {mode}\n"
-                    f"[bold]État :[/bold] {saved_status}\n"
-                    f"[bold]Feuilles :[/bold] {info.sheets_count}",
+                    f"[bold]Etat :[/bold] {saved_status}\n"
+                    f"[bold]Feuilles :[/bold] {info.sheets_count}"
+                    f"{dev_notice}",
                     title="Classeur ouvert",
                     border_style="green",
                 )
@@ -878,6 +908,10 @@ def workbook_create(
         "-t",
         help="Template file to use",
     ),
+    visible: bool = typer.Option(
+        False, "--visible", help="Rendre Excel visible (defaut)"
+    ),
+    hidden: bool = typer.Option(False, "--hidden", help="Masquer la fenetre Excel"),
 ):
     """Create a new workbook.
 
@@ -885,7 +919,7 @@ def workbook_create(
     Optionally uses a template file as starting point.
     """
     try:
-        with ExcelManager() as excel_mgr:
+        with ExcelManager(visibility=_resolve_visibility(visible, hidden)) as excel_mgr:
             wb_mgr = WorkbookManager(excel_mgr)
             info = wb_mgr.create(path, template=template)
 
@@ -948,6 +982,10 @@ def workbook_close(
         "-f",
         help="Force close without confirmation dialogs",
     ),
+    visible: bool = typer.Option(
+        False, "--visible", help="Rendre Excel visible (defaut)"
+    ),
+    hidden: bool = typer.Option(False, "--hidden", help="Masquer la fenetre Excel"),
 ):
     """Close an open workbook.
 
@@ -955,7 +993,7 @@ def workbook_close(
     By default, saves changes before closing.
     """
     try:
-        with ExcelManager() as excel_mgr:
+        with ExcelManager(visibility=_resolve_visibility(visible, hidden)) as excel_mgr:
             wb_mgr = WorkbookManager(excel_mgr)
             wb_mgr.close(path, save=save, force=force)
 
@@ -1000,6 +1038,10 @@ def workbook_save(
         "-o",
         help="Save to a different file (SaveAs)",
     ),
+    visible: bool = typer.Option(
+        False, "--visible", help="Rendre Excel visible (defaut)"
+    ),
+    hidden: bool = typer.Option(False, "--hidden", help="Masquer la fenetre Excel"),
 ):
     """Save a workbook.
 
@@ -1007,12 +1049,12 @@ def workbook_save(
     Use --as to save to a different file (SaveAs).
     """
     try:
-        with ExcelManager() as excel_mgr:
+        with ExcelManager(visibility=_resolve_visibility(visible, hidden)) as excel_mgr:
             wb_mgr = WorkbookManager(excel_mgr)
             wb_mgr.save(path, output=output)
 
             if output:
-                target = f"{path.name} → {output.name}"
+                target = f"{path.name} -> {output.name}"
                 operation = "SaveAs"
             else:
                 target = path.name
@@ -1061,14 +1103,19 @@ def workbook_save(
 
 
 @workbook_app.command("list")
-def workbook_list():
+def workbook_list(
+    visible: bool = typer.Option(
+        False, "--visible", help="Rendre Excel visible (defaut)"
+    ),
+    hidden: bool = typer.Option(False, "--hidden", help="Masquer la fenetre Excel"),
+):
     """List all open workbooks.
 
     Displays information about all workbooks currently open
     in the Excel instance.
     """
     try:
-        with ExcelManager() as excel_mgr:
+        with ExcelManager(visibility=_resolve_visibility(visible, hidden)) as excel_mgr:
             wb_mgr = WorkbookManager(excel_mgr)
             workbooks = wb_mgr.list()
 
@@ -1783,15 +1830,29 @@ def vba_import(
                 overwrite=overwrite,
             )
 
-            # Affichage du succès
+            # Warning de conversion d'encodage si applicable
+            enc_result = getattr(vba_mgr, "_last_encoding_result", None)
+            encoding_notice = ""
+            if enc_result and enc_result.was_converted:
+                parts = []
+                parts.append(f"encodage {enc_result.source_encoding}")
+                if enc_result.had_wrong_line_endings:
+                    parts.append("fins de ligne LF")
+                detail = " + ".join(parts)
+                encoding_notice = (
+                    f"\n[yellow]Converti de {detail} vers Windows-1252/CRLF[/yellow]"
+                )
+
+            # Affichage du succes
             console.print(
                 Panel(
-                    f"[green]OK[/green] Module VBA importé avec succès\n\n"
+                    f"[green]OK[/green] Module VBA importe avec succes\n\n"
                     f"[bold]Nom :[/bold] {info.name}\n"
                     f"[bold]Type :[/bold] {info.module_type}\n"
                     f"[bold]Lignes :[/bold] {info.lines_count}\n"
                     f"[bold]PredeclaredId :[/bold] "
-                    f"{'Oui' if info.has_predeclared_id else 'Non'}",
+                    f"{'Oui' if info.has_predeclared_id else 'Non'}"
+                    f"{encoding_notice}",
                     title="Import VBA",
                     border_style="green",
                 )
@@ -2087,7 +2148,7 @@ def _display_macro_result(result: MacroResult, console_obj: Console) -> None:
         console_obj.print(
             Panel(
                 f"[red]{result.error_message}[/red]",
-                title=f"❌ Erreur lors de l'exécution de {result.macro_name}",
+                title=f"Erreur lors de l'exécution de {result.macro_name}",
                 border_style="red",
             )
         )
@@ -2100,7 +2161,7 @@ def _display_macro_result(result: MacroResult, console_obj: Console) -> None:
             Panel(
                 "[green]La macro a été exécutée avec succès.[/green]\n"
                 "[dim]Aucune valeur de retour (probablement un Sub VBA)[/dim]",
-                title=f"✅ {result.macro_name}",
+                title=f"OK {result.macro_name}",
                 border_style="green",
             )
         )
@@ -2117,7 +2178,7 @@ def _display_macro_result(result: MacroResult, console_obj: Console) -> None:
         console_obj.print(
             Panel(
                 table,
-                title=f"✅ {result.macro_name}",
+                title=f"OK {result.macro_name}",
                 border_style="green",
             )
         )
@@ -2178,7 +2239,7 @@ def run_macro(
             workbook_path = Path(workbook)
             if not workbook_path.exists():
                 console.print(
-                    f"[red]✗[/red] Fichier introuvable: {workbook}", style="red"
+                    f"[red]X[/red] Fichier introuvable: {workbook}", style="red"
                 )
                 raise typer.Exit(code=1)
 
@@ -2189,19 +2250,19 @@ def run_macro(
                 existing = mgr.get_running_instance()
                 if existing:
                     console.print(
-                        f"[blue]→[/blue] Connexion à l'instance Excel existante "
+                        f"[blue]>[/blue] Connexion à l'instance Excel existante "
                         f"(PID {existing.pid})"
                     )
                 else:
                     # Démarrer une nouvelle instance
                     console.print(
-                        "[blue]→[/blue] Démarrage d'une nouvelle instance Excel..."
+                        "[blue]>[/blue] Démarrage d'une nouvelle instance Excel..."
                     )
                     mgr.start(new=False)
 
             except ExcelConnectionError as e:
                 console.print(
-                    f"[red]✗[/red] Impossible de se connecter à Excel: {e.message}",
+                    f"[red]X[/red] Impossible de se connecter à Excel: {e.message}",
                     style="red",
                 )
                 raise typer.Exit(code=1)
@@ -2209,7 +2270,7 @@ def run_macro(
             # Créer le runner et exécuter la macro
             runner = MacroRunner(mgr)
 
-            console.print(f"[blue]→[/blue] Exécution de [bold]{macro_name}[/bold]...")
+            console.print(f"[blue]>[/blue] Exécution de [bold]{macro_name}[/bold]...")
 
             # Exécuter avec timeout (via signal ou threading selon OS)
             # Pour simplifier, on exécute directement ici
@@ -2229,21 +2290,21 @@ def run_macro(
         console.print(
             Panel(
                 f"[red]Erreur VBA:[/red] {e.reason}",
-                title="❌ Échec d'exécution",
+                title="Echec d'execution",
                 border_style="red",
             )
         )
         raise typer.Exit(code=1)
 
     except WorkbookNotFoundError as e:
-        console.print(f"[red]✗[/red] Classeur non ouvert: {e.path.name}", style="red")
+        console.print(f"[red]X[/red] Classeur non ouvert: {e.path.name}", style="red")
         raise typer.Exit(code=1)
 
     except Exception as e:
         console.print(
             Panel(
                 f"[red]Erreur inattendue:[/red] {str(e)}",
-                title="❌ Erreur",
+                title="Erreur",
                 border_style="red",
             )
         )

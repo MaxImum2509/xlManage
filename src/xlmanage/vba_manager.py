@@ -17,7 +17,11 @@ You should have received a copy of the GNU General Public License
 along with xlManage.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import logging
 import re
+import shutil
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +35,8 @@ from .exceptions import (
     VBAProjectAccessError,
     VBAWorkbookFormatError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -73,6 +79,169 @@ EXTENSION_TO_TYPE: dict[str, str] = {
 
 # Encodage obligatoire pour les fichiers VBA
 VBA_ENCODING: str = "windows-1252"
+
+# BOM UTF-8
+_UTF8_BOM: bytes = b"\xef\xbb\xbf"
+
+
+@dataclass
+class EncodingCheckResult:
+    """Result of VBA file encoding check.
+
+    Attributes:
+        original_path: Path to the source file.
+        effective_path: Path to use for import (may be a temp file).
+        was_converted: True if the file was converted.
+        source_encoding: Detected source encoding.
+        had_wrong_line_endings: True if line endings were not CRLF.
+    """
+
+    original_path: Path
+    effective_path: Path
+    was_converted: bool
+    source_encoding: str
+    had_wrong_line_endings: bool
+
+
+def _detect_file_encoding(raw: bytes) -> str:
+    """Detect encoding of raw VBA file bytes.
+
+    Strategy (in order):
+      1. UTF-8 BOM present -> "utf-8-sig"
+      2. Decodable as UTF-8 **and** contains bytes > 127 -> "utf-8"
+      3. Otherwise -> "windows-1252" (already compliant)
+
+    Args:
+        raw: Raw file bytes.
+
+    Returns:
+        Detected encoding name usable with ``open(encoding=...)``.
+    """
+    if raw.startswith(_UTF8_BOM):
+        return "utf-8-sig"
+
+    # Check if the content is valid UTF-8 with high bytes
+    has_high_bytes = any(b > 127 for b in raw)
+    if has_high_bytes:
+        try:
+            raw.decode("utf-8")
+            return "utf-8"
+        except UnicodeDecodeError:
+            pass
+
+    return "windows-1252"
+
+
+def _has_wrong_line_endings(raw: bytes) -> bool:
+    """Check whether raw bytes contain LF without preceding CR.
+
+    Args:
+        raw: Raw file bytes.
+
+    Returns:
+        True if at least one bare ``\\n`` (not preceded by ``\\r``) is found.
+    """
+    i = raw.find(b"\n")
+    while i != -1:
+        if i == 0 or raw[i - 1 : i] != b"\r":
+            return True
+        i = raw.find(b"\n", i + 1)
+    return False
+
+
+def _ensure_vba_encoding(module_file: Path) -> EncodingCheckResult:
+    """Ensure a VBA source file is Windows-1252 with CRLF line endings.
+
+    If the file is already compliant, returns the original path.
+    Otherwise, reads with the detected encoding, converts to
+    Windows-1252 + CRLF, writes a temporary file, and returns
+    that path.
+
+    Args:
+        module_file: Path to the VBA source file (.bas, .cls, .frm).
+
+    Returns:
+        EncodingCheckResult with the effective path to use for import.
+
+    Raises:
+        VBAImportError: If the file contains characters that cannot be
+            represented in Windows-1252.
+    """
+    raw = module_file.read_bytes()
+    detected = _detect_file_encoding(raw)
+    wrong_endings = _has_wrong_line_endings(raw)
+
+    # Already compliant?
+    if detected == "windows-1252" and not wrong_endings:
+        return EncodingCheckResult(
+            original_path=module_file,
+            effective_path=module_file,
+            was_converted=False,
+            source_encoding=detected,
+            had_wrong_line_endings=False,
+        )
+
+    # Need conversion
+    try:
+        text = raw.decode(detected)
+    except UnicodeDecodeError as e:
+        raise VBAImportError(
+            str(module_file),
+            f"Impossible de decoder le fichier en {detected}: {e}",
+        ) from e
+
+    try:
+        encoded = text.encode("windows-1252")
+    except UnicodeEncodeError as e:
+        raise VBAImportError(
+            str(module_file),
+            f"Le fichier contient des caracteres non representables "
+            f"en Windows-1252 (position {e.start}): {e.reason}",
+        ) from e
+
+    # Normalize line endings to CRLF
+    # First remove any existing \r to avoid \r\r\n, then replace \n with \r\n
+    normalized = (
+        encoded.replace(b"\r\n", b"\n").replace(b"\r", b"\n").replace(b"\n", b"\r\n")
+    )
+
+    # Write to a temp file in the same directory (same extension required)
+    suffix = module_file.suffix
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=suffix,
+        prefix=f"{module_file.stem}_",
+        dir=module_file.parent,
+        delete=False,
+    )
+    tmp.write(normalized)
+    tmp.close()
+
+    tmp_path = Path(tmp.name)
+
+    # For UserForms (.frm), copy the companion .frx alongside the temp .frm
+    if suffix.lower() == ".frm":
+        frx_source = module_file.with_suffix(".frx")
+        if not frx_source.exists():
+            raise VBAImportError(
+                str(module_file), f"Fichier .frx manquant : {frx_source}"
+            )
+        frx_dest = tmp_path.with_suffix(".frx")
+        shutil.copy2(frx_source, frx_dest)
+
+    logger.info(
+        "Converted %s from %s to windows-1252/CRLF -> %s",
+        module_file.name,
+        detected,
+        tmp.name,
+    )
+
+    return EncodingCheckResult(
+        original_path=module_file,
+        effective_path=tmp_path,
+        was_converted=True,
+        source_encoding=detected,
+        had_wrong_line_endings=wrong_endings,
+    )
 
 
 def _get_vba_project(wb: CDispatch) -> CDispatch:
@@ -126,13 +295,17 @@ def _find_component(vb_project: CDispatch, name: str) -> CDispatch | None:
 
 
 def _detect_module_type(path: Path) -> str:
-    """Détecte le type de module depuis l'extension.
+    """Détecte le type de module depuis l'extension et le contenu.
+
+    Pour les fichiers .cls, distingue un module de classe d'un module de
+    document (ThisWorkbook, Sheet) en inspectant les attributs
+    ``VB_PredeclaredId`` et ``VB_Exposed``.
 
     Args:
         path: Chemin du fichier module VBA
 
     Returns:
-        str: Type du module ("standard", "class", "userform")
+        str: Type du module ("standard", "class", "document", "userform")
 
     Raises:
         VBAImportError: Si l'extension n'est pas reconnue
@@ -146,14 +319,116 @@ def _detect_module_type(path: Path) -> str:
             f"Extensions valides : {', '.join(EXTENSION_TO_TYPE.keys())}",
         )
 
-    return EXTENSION_TO_TYPE[extension]
+    base_type = EXTENSION_TO_TYPE[extension]
+
+    # Pour les .cls, distinguer class vs document
+    if base_type == "class" and _is_document_module(path):
+        return "document"
+
+    return base_type
+
+
+def _is_document_module(file_path: Path) -> bool:
+    """Détermine si un fichier .cls est un module de document.
+
+    Un module de document (ThisWorkbook, Sheet) possède à la fois
+    ``VB_PredeclaredId = True`` et ``VB_Exposed = True``, contrairement
+    aux modules de classe ordinaires.
+
+    Args:
+        file_path: Chemin du fichier .cls
+
+    Returns:
+        bool: True si le fichier décrit un module de document
+    """
+    try:
+        content = file_path.read_text(encoding=VBA_ENCODING)
+    except UnicodeDecodeError:
+        return False
+
+    has_predeclared = bool(re.search(r"Attribute VB_PredeclaredId\s*=\s*True", content))
+    has_exposed = bool(re.search(r"Attribute VB_Exposed\s*=\s*True", content))
+    return has_predeclared and has_exposed
+
+
+def _parse_standard_module_name(file_path: Path) -> str:
+    """Parse un fichier .bas pour extraire le nom du module (VB_Name).
+
+    Si ``Attribute VB_Name`` est absent, utilise le stem du fichier.
+
+    Args:
+        file_path: Chemin du fichier .bas
+
+    Returns:
+        str: Nom du module extrait de VB_Name, ou stem du fichier.
+
+    Raises:
+        VBAImportError: Si le fichier est illisible (encodage invalide)
+    """
+    try:
+        content = file_path.read_text(encoding="windows-1252")
+    except UnicodeDecodeError as e:
+        raise VBAImportError(
+            str(file_path),
+            f"Encodage invalide. Les fichiers VBA doivent être en windows-1252 : {e}",
+        ) from e
+
+    name_match = re.search(r'Attribute VB_Name = "([^"]+)"', content)
+    if name_match:
+        return name_match.group(1)
+
+    logger.warning(
+        "Attribut VB_Name absent dans '%s', utilisation du nom de fichier : '%s'",
+        file_path.name,
+        file_path.stem,
+    )
+    return file_path.stem
+
+
+def _parse_userform_name(file_path: Path) -> str:
+    """Parse un fichier .frm pour extraire le nom du UserForm.
+
+    Cherche d'abord ``Attribute VB_Name``, puis la ligne
+    ``Begin {CLSID} FormName`` si l'attribut est absent.
+
+    Args:
+        file_path: Chemin du fichier .frm
+
+    Returns:
+        str: Nom du UserForm
+
+    Raises:
+        VBAImportError: Si le nom ne peut pas être extrait
+    """
+    try:
+        content = file_path.read_text(encoding="windows-1252")
+    except UnicodeDecodeError as e:
+        raise VBAImportError(
+            str(file_path),
+            f"Encodage invalide. Les fichiers VBA doivent être en windows-1252 : {e}",
+        ) from e
+
+    # Try Attribute VB_Name first
+    name_match = re.search(r'Attribute VB_Name = "([^"]+)"', content)
+    if name_match:
+        return name_match.group(1)
+
+    # Fallback: parse Begin {CLSID} FormName header
+    begin_match = re.search(r"^Begin\s+\{[^}]+\}\s+(\w+)", content, re.MULTILINE)
+    if begin_match:
+        return begin_match.group(1)
+
+    raise VBAImportError(
+        str(file_path),
+        "Impossible d'extraire le nom du UserForm (ni VB_Name ni Begin header)",
+    )
 
 
 def _parse_class_module(file_path: Path) -> tuple[str, bool, str]:
-    """Parse un fichier .cls pour extraire les métadonnées.
+    """Parse un fichier .cls pour extraire les mtadonnes.
 
     Les fichiers .cls commencent par des lignes "Attribute VB_Name" qu'il
-    faut parser séparément avant d'importer le code.
+    faut parser sparment avant d'importer le code.
 
     Args:
         file_path: Chemin du fichier .cls
@@ -162,10 +437,10 @@ def _parse_class_module(file_path: Path) -> tuple[str, bool, str]:
         tuple[str, bool, str]: (module_name, predeclared_id, code_content)
             - module_name: Nom du module extrait de VB_Name
             - predeclared_id: True si VB_PredeclaredId = True
-            - code_content: Code source sans les attributs d'en-tête
+            - code_content: Code source sans les attributs d'en-tte
 
     Raises:
-        VBAImportError: Si le fichier est invalide ou mal encodé
+        VBAImportError: Si le fichier est invalide ou mal encod
     """
     try:
         # Lire le fichier avec l'encodage VBA (OBLIGATOIRE)
@@ -176,13 +451,17 @@ def _parse_class_module(file_path: Path) -> tuple[str, bool, str]:
             f"Encodage invalide. Les fichiers VBA doivent être en windows-1252 : {e}",
         ) from e
 
-    # Extraire VB_Name
+    # Extraire VB_Name — fallback sur le stem du fichier si absent
     name_match = re.search(r'Attribute VB_Name = "([^"]+)"', content)
-    if not name_match:
-        raise VBAImportError(
-            str(file_path), "Attribut VB_Name manquant dans le fichier .cls"
+    if name_match:
+        module_name = name_match.group(1)
+    else:
+        module_name = file_path.stem
+        logger.warning(
+            "Attribut VB_Name absent dans '%s', utilisation du nom de fichier : '%s'",
+            file_path.name,
+            module_name,
         )
-    module_name = name_match.group(1)
 
     # Extraire VB_PredeclaredId (False par défaut)
     predeclared_match = re.search(r"Attribute VB_PredeclaredId = (True|False)", content)
@@ -207,6 +486,58 @@ def _parse_class_module(file_path: Path) -> tuple[str, bool, str]:
         code_content = content[code_start:].strip()
 
     return module_name, predeclared_id, code_content
+
+
+def _parse_document_module(file_path: Path) -> tuple[str, str]:
+    """Parse un fichier .cls de module document pour extraire le nom et le code.
+
+    Retire les en-têtes physiques (VERSION, BEGIN/END, Attribute) pour ne
+    conserver que le code VBA injectable via ``CodeModule.AddFromString``.
+
+    Args:
+        file_path: Chemin du fichier .cls (module document)
+
+    Returns:
+        tuple[str, str]: (module_name, code_content)
+            - module_name: Nom du module extrait de VB_Name
+            - code_content: Code source sans les attributs d'en-tête
+
+    Raises:
+        VBAImportError: Si le fichier est invalide ou mal encodé
+    """
+    try:
+        content = file_path.read_text(encoding=VBA_ENCODING)
+    except UnicodeDecodeError as e:
+        raise VBAImportError(
+            str(file_path),
+            f"Encodage invalide. Les fichiers VBA doivent être en windows-1252 : {e}",
+        ) from e
+
+    # Extraire VB_Name — fallback sur le stem du fichier si absent
+    name_match = re.search(r'Attribute VB_Name = "([^"]+)"', content)
+    if name_match:
+        module_name = name_match.group(1)
+    else:
+        module_name = file_path.stem
+        logger.warning(
+            "Attribut VB_Name absent dans '%s', utilisation du nom de fichier : '%s'",
+            file_path.name,
+            module_name,
+        )
+
+    # Filtrer les en-têtes physiques pour ne garder que le code
+    lines = content.splitlines()
+    code_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"^(VERSION\s|BEGIN$|END$|Attribute\s+VB_)", stripped):
+            continue
+        if "MultiUse" in stripped:
+            continue
+        code_lines.append(line)
+
+    code_content = "\r\n".join(code_lines)
+    return module_name, code_content
 
 
 class VBAManager:
@@ -265,9 +596,10 @@ class VBAManager:
     ) -> VBAModuleInfo:
         """Importe un module VBA depuis un fichier.
 
-        Supporte les modules standard (.bas), de classe (.cls) et UserForms (.frm).
-        Les modules de classe nécessitent un traitement spécial pour extraire
-        les attributs VB_Name et VB_PredeclaredId.
+        Supporte les modules standard (.bas), de classe (.cls), UserForms (.frm)
+        et les modules de document (.cls avec PredeclaredId+Exposed, ex:
+        ThisWorkbook, Sheet1). Les modules de document sont détectés
+        automatiquement et leur code est injecté via CodeModule.
 
         Args:
             module_file: Chemin du fichier .bas, .cls ou .frm à importer
@@ -296,29 +628,52 @@ class VBAManager:
         if not module_file.exists():
             raise VBAImportError(str(module_file), "Fichier introuvable")
 
-        # Détection automatique du type si non fourni
-        if module_type is None:
-            module_type = _detect_module_type(module_file)
+        # Vérifier et convertir l'encodage si nécessaire
+        encoding_result = _ensure_vba_encoding(module_file)
+        effective_file = encoding_result.effective_path
+        self._last_encoding_result: EncodingCheckResult | None = encoding_result
 
-        # Résoudre le classeur cible
-        from .worksheet_manager import _resolve_workbook
+        try:
+            # Détection automatique du type si non fourni
+            if module_type is None:
+                module_type = _detect_module_type(effective_file)
 
-        wb = _resolve_workbook(self.app, workbook)
+            # Résoudre le classeur cible
+            from .worksheet_manager import _resolve_workbook
 
-        # Accéder au VBProject (raise si Trust Center bloque)
-        vb_project = _get_vba_project(wb)
+            wb = _resolve_workbook(self.app, workbook)
 
-        # Router vers la méthode appropriée selon le type
-        if module_type == "standard":
-            return self._import_standard_module(vb_project, module_file, overwrite)
-        elif module_type == "class":
-            return self._import_class_module(vb_project, module_file, overwrite)
-        elif module_type == "userform":
-            return self._import_userform_module(vb_project, module_file, overwrite)
-        else:
-            raise VBAImportError(
-                str(module_file), f"Type de module '{module_type}' non supporté"
-            )
+            # Accéder au VBProject (raise si Trust Center bloque)
+            vb_project = _get_vba_project(wb)
+
+            # Router vers la méthode appropriée selon le type
+            if module_type == "standard":
+                return self._import_standard_module(
+                    vb_project, effective_file, overwrite
+                )
+            elif module_type == "class":
+                return self._import_class_module(vb_project, effective_file, overwrite)
+            elif module_type == "userform":
+                return self._import_userform_module(
+                    vb_project, effective_file, overwrite
+                )
+            elif module_type == "document":
+                return self._import_document_module(vb_project, effective_file)
+            else:
+                raise VBAImportError(
+                    str(module_file),
+                    f"Type de module '{module_type}' non supporté",
+                )
+        finally:
+            # Nettoyer le fichier temporaire si une conversion a eu lieu
+            if encoding_result.was_converted:
+                try:
+                    encoding_result.effective_path.unlink(missing_ok=True)
+                    if encoding_result.effective_path.suffix.lower() == ".frm":
+                        frx_tmp = encoding_result.effective_path.with_suffix(".frx")
+                        frx_tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _import_standard_module(
         self, vb_project: CDispatch, module_file: Path, overwrite: bool
@@ -338,26 +693,28 @@ class VBAManager:
             VBAImportError: Si l'import COM échoue
         """
         try:
+            # Parser le fichier .bas pour extraire le nom (VB_Name)
+            module_name = _parse_standard_module_name(module_file)
+
+            # Vérifier si un module avec ce nom existe déjà
+            existing = _find_component(vb_project, module_name)
+            if existing is not None:
+                if not overwrite:
+                    raise VBAModuleAlreadyExistsError(module_name, vb_project.Name)
+                # Supprimer l'ancien module
+                vb_project.VBComponents.Remove(existing)
+                del existing
+
             # Import direct via VBComponents.Import()
             component = vb_project.VBComponents.Import(str(module_file.resolve()))
 
-            # Récupérer le nom du module importé
-            module_name = component.Name
-
-            # Vérifier si un module avec ce nom existe déjà (sauf si overwrite)
-            if not overwrite:
-                existing = _find_component(vb_project, module_name)
-                if existing is not None and existing != component:
-                    # Annuler l'import (supprimer le module importé)
-                    vb_project.VBComponents.Remove(component)
-                    raise VBAModuleAlreadyExistsError(module_name, vb_project.Name)
-
-            # Si overwrite et module existait, l'import l'a écrasé automatiquement
+            # Le nom devrait être le même, mais on le récupère quand même
+            imported_name = component.Name
 
             # Construire VBAModuleInfo
             lines_count = component.CodeModule.CountOfLines
             return VBAModuleInfo(
-                name=module_name,
+                name=imported_name,
                 module_type="standard",
                 lines_count=lines_count,
                 has_predeclared_id=False,
@@ -409,8 +766,9 @@ class VBAManager:
             if predeclared_id:
                 component.Properties("PredeclaredId").Value = True
 
-            # Ajouter le code source
+            # Effacer le contenu par défaut ("Option Explicit") et ajouter le code
             if code_content:
+                component.CodeModule.DeleteLines(1, component.CodeModule.CountOfLines)
                 component.CodeModule.AddFromString(code_content)
 
             # Construire VBAModuleInfo
@@ -450,19 +808,22 @@ class VBAManager:
             )
 
         try:
-            # Import direct via VBComponents.Import()
-            component = vb_project.VBComponents.Import(str(module_file.resolve()))
-
-            # Récupérer le nom du UserForm
-            module_name = component.Name
+            # Parser le nom du UserForm depuis le fichier .frm
+            module_name = _parse_userform_name(module_file)
 
             # Vérifier si un UserForm avec ce nom existe déjà
-            if not overwrite:
-                existing = _find_component(vb_project, module_name)
-                if existing is not None and existing != component:
-                    # Annuler l'import
-                    vb_project.VBComponents.Remove(component)
+            existing = _find_component(vb_project, module_name)
+            if existing is not None:
+                if not overwrite:
                     raise VBAModuleAlreadyExistsError(module_name, vb_project.Name)
+                # Supprimer l'ancien UserForm avant import
+                vb_project.VBComponents.Remove(existing)
+                del existing
+                # Laisser Excel finaliser la suppression du UserForm
+                time.sleep(0.5)
+
+            # Import via VBComponents.Import()
+            component = vb_project.VBComponents.Import(str(module_file.resolve()))
 
             # Construire VBAModuleInfo
             lines_count = component.CodeModule.CountOfLines
@@ -471,6 +832,60 @@ class VBAManager:
                 module_type="userform",
                 lines_count=lines_count,
                 has_predeclared_id=True,  # UserForms ont toujours PredeclaredId=True
+            )
+
+        except pywintypes.com_error as e:
+            raise VBAImportError(str(module_file), f"Erreur COM: {e}") from e
+
+    def _import_document_module(
+        self, vb_project: CDispatch, module_file: Path
+    ) -> VBAModuleInfo:
+        """Importe un module de document (.cls avec PredeclaredId+Exposed).
+
+        Les modules de document (ThisWorkbook, Sheet1, etc.) sont intégrés
+        au classeur et ne peuvent pas être supprimés ni recréés. Le code
+        est injecté en remplaçant le contenu du CodeModule existant.
+
+        Le paramètre ``overwrite`` n'est pas nécessaire : le remplacement
+        du code est toujours le comportement attendu pour un module document.
+
+        Args:
+            vb_project: Objet COM VBProject
+            module_file: Chemin du fichier .cls (module document)
+
+        Returns:
+            VBAModuleInfo du module mis à jour
+
+        Raises:
+            VBAImportError: Si le module cible est introuvable dans le projet
+                ou si le parsing du fichier échoue
+        """
+        module_name, code_content = _parse_document_module(module_file)
+
+        # Trouver le composant document existant dans le projet
+        component = _find_component(vb_project, module_name)
+        if component is None:
+            raise VBAImportError(
+                str(module_file),
+                f"Module document '{module_name}' introuvable dans le projet. "
+                f"Les modules document doivent déjà exister dans le classeur.",
+            )
+
+        try:
+            # Remplacer le code existant
+            code_module = component.CodeModule
+            if code_module.CountOfLines > 0:
+                code_module.DeleteLines(1, code_module.CountOfLines)
+
+            if code_content.strip():
+                code_module.AddFromString(code_content)
+
+            lines_count = code_module.CountOfLines
+            return VBAModuleInfo(
+                name=module_name,
+                module_type="document",
+                lines_count=lines_count,
+                has_predeclared_id=True,
             )
 
         except pywintypes.com_error as e:
@@ -568,7 +983,9 @@ class VBAManager:
         """Exporte manuellement un module de document.
 
         Les modules de document (ThisWorkbook, Sheet1, etc.) ne supportent pas
-        component.Export(). On doit extraire le code via CodeModule.Lines().
+        component.Export(). On doit extraire le code via CodeModule.Lines()
+        et reconstruire les en-têtes Attribute VB_* pour permettre la
+        ré-importation via import_module().
 
         Args:
             component: Module de document à exporter
@@ -580,18 +997,38 @@ class VBAManager:
         # Créer le dossier parent si nécessaire
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Construire l'en-tête standard d'un module document.
+        # Pour les modules document (Type 100), les attributs VB_ sont
+        # intrinsèques et invariants — l'API COM ne les expose pas via
+        # component.Properties (qui retourne les propriétés de l'objet
+        # hôte Workbook/Worksheet). Seul component.Name est dynamique.
+        module_name = component.Name
+        header_lines = [
+            "VERSION 1.0 CLASS",
+            "BEGIN",
+            "  MultiUse = -1  'True",
+            "END",
+            f'Attribute VB_Name = "{module_name}"',
+            "Attribute VB_GlobalNameSpace = False",
+            "Attribute VB_Creatable = False",
+            "Attribute VB_PredeclaredId = True",
+            "Attribute VB_Exposed = True",
+        ]
+        header = "\r\n".join(header_lines) + "\r\n"
+
         # Extraire le code source
         code_module = component.CodeModule
         line_count = code_module.CountOfLines
 
         if line_count > 0:
-            # Lines(start_line, count) retourne le code
             code_content = code_module.Lines(1, line_count)
         else:
             code_content = ""
 
-        # Écrire dans le fichier avec l'encodage VBA
-        output_file.write_text(code_content, encoding=VBA_ENCODING)
+        # Écrire en-tête + code en Windows-1252 avec CRLF
+        output_file.write_bytes(
+            header.encode(VBA_ENCODING) + code_content.encode(VBA_ENCODING)
+        )
 
         return output_file
 
